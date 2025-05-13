@@ -1,0 +1,20 @@
+# Environnement virtuel
+.venv/
+venv/
+*/venv/
+
+# Fichiers Python compilés et caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Fichiers d'environnement (Secrets!)
+.env*
+
+# Fichiers IDE/Editeur (optionnel mais recommandé)
+.vscode/
+.idea/
+*.swp
+
+# Fichiers SQLite (si vous avez utilisé le fallback)
+db.sqlite3
