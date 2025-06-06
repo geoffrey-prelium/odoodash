@@ -18,5 +18,6 @@ urlpatterns = [
 
     # Redirige la racine du site vers le tableau de bord
     path('', RedirectView.as_view(pattern_name='core:dashboard', permanent=False), name='home'),
+    path('accounts/', include('django.contrib.auth.urls')),
 
 ]
