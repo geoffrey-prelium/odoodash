@@ -1,18 +1,10 @@
-# core/management/commands/fetch_indicators.py
-
-import xmlrpc.client
 import logging
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
-from django.conf import settings  # Pour accéder à FERNET_KEY
 from datetime import datetime
-
-# Importer les modèles Django
 from core.models import ConfigurationCabinet, ClientsOdoo, IndicateursHistoriques, ClientOdooStatus
-# Importer les fonctions de chiffrement/déchiffrement et connect_odoo
 from core.utils import decrypt_value, connect_odoo  # connect_odoo est dans utils
 
-# Configuration du logging (optionnel mais recommandé)
 logger = logging.getLogger(__name__)
 
 

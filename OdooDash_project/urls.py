@@ -8,7 +8,6 @@ urlpatterns = [
     # URL pour l'interface d'administration Django
     path('admin/', admin.site.urls),
 
-    # Inclut les URLs de votre application 'core' (ex: dashboard)
     # Accessibles via /app/dashboard/, etc.
     path('app/', include('core.urls', namespace='core')),
 

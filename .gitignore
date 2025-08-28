@@ -1,20 +1,18 @@
-# Environnement virtuel
-.venv/
+# Fichiers de dépendances et d'environnement virtuel
 venv/
-*/venv/
-
-# Fichiers Python compilés et caches
+env/
+.env
+*.pyc
 __pycache__/
-*.py[cod]
-*$py.class
 
-# Fichiers d'environnement (Secrets!)
-.env*
-
-# Fichiers IDE/Editeur (optionnel mais recommandé)
-.vscode/
-.idea/
-*.swp
-
-# Fichiers SQLite (si vous avez utilisé le fallback)
+# Base de données locale
 db.sqlite3
+
+# Fichiers statiques collectés
+staticfiles/
+
+# Fichiers média
+media/
+
+# Logs
+*.log

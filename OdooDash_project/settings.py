@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key-if-not-set') # Fallback pour dev
 
-# --- MODIFIÉ ICI ---
+
 # Forcer DEBUG = True pour le développement local pour l'instant
 # Vous pourrez remettre la lecture depuis .env plus tard si besoin
 DEBUG = True
