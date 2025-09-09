@@ -14,21 +14,27 @@ def get_item(dictionary, key):
         return dictionary.get(key)
     return None
 
-@register.filter(name='dict_from_list') # Enregistre le filtre sous le nom 'dict_from_list'
+@register.filter(name='dict_from_list')
 def dict_from_list(object_list, key_name):
     """
     Transforme une liste d'objets en dictionnaire, en utilisant la valeur
     d'un attribut spécifique de chaque objet comme clé.
-    Usage: {% with my_dict=object_list|dict_from_list:'attribute_name' %}
+    La clé est normalisée (minuscules, sans espaces superflus) pour correspondre
+    à la logique de la vue.
     """
     if not object_list:
         return {}
-    try:
-        # Crée un dictionnaire {valeur_attribut: objet_entier}
-        return {getattr(obj, key_name): obj for obj in object_list}
-    except AttributeError:
-        # Si l'attribut n'existe pas sur un des objets
-        return {}
+        
+    result_dict = {}
+    for obj in object_list:
+        if hasattr(obj, key_name):
+            key_value = getattr(obj, key_name)
+            # La ligne cruciale : on normalise la clé ici !
+            if isinstance(key_value, str):
+                normalized_key = key_value.strip().lower()
+                result_dict[normalized_key] = obj
+                
+    return result_dict
 
 # --- NOUVEAU FILTRE AJOUTÉ ---
 @register.filter(name='format_collab_name')

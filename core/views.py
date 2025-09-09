@@ -29,22 +29,61 @@ INDICATOR_CATEGORIES = {
         'nb utilisateurs lpde',
         'nb modules actifs',
         'date activation base',
+        'type de base',
+        'type hebergement',
+        'code abonnement',
+        'url odoo',
+        'nom bdd',
+        'date expiration base',
+        'nb societes',
+        'nb utilisateurs inactifs > 14j',
+        'nb modeles personnalises (indicatif)',
+        'nb champs personnalises',
+        'erreurs serveur (24h)',
+        'nb actions automatisées',
+        'emails en erreur (30j)',
+        'nombre d\'activités en retard',
+        'nombre de contacts',
+        'contacts en doublon (sim > 90%)',                
+        "nombre de tickets non assignés",
     ],
-    'Production comptable': [
+    'Comptabilité': [
         'operations à qualifier',
         'achats à traiter',
         'paiements orphelins',
         'virements internes non soldés',
         'solde virements internes',
         'pivot encaissement',
-        # 'nb_lignes_ecritures_annee_courante',
+        'marge brute 30j',
+        "transactions bancaires à rapprocher",
+        "lignes ecritures annee courante",
+        "lignes ecritures annee precedente",
+        "resultat provisoire annee courante",
+        
         # 'factures_fourn_attente_validation',
     ],
-    'Santé financière': [
-        'marge brute 30j',
+    'Ventes': [
+        "commandes à facturer en retard",
+        "nombre de factures en retard",
+        "nombre de commandes à facturer",
+        "factures clients créées (30j)",
+        "devis créés (30j)",
+        "demandes de prix créées (30j)",
+        "opportunités créées (30j)",       
     ],
-    # La catégorie "Divers" est spéciale et gérée différemment pour l'affichage des colonnes.
-    # Elle peut être vide ici si elle ne contient aucun indicateur stocké en BDD.
+    'Achats': [
+        "commandes d'achats à facturer",
+        "commandes d'achats à facturer en retard",
+    ],
+    
+    'Suivi stock': [
+        'produits en stock négatif',
+        'produits stockés à coût 0',
+        "nombre de produits",
+        "ajustements d'inventaire à appliquer",
+        "nombre de livraisons en retard",
+        "nombre de réceptions en retard",        
+    ],
     'Divers': []
 }
 
