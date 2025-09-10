@@ -1,0 +1,16 @@
+# Ignorer l'environnement virtuel
+.venv
+
+# Ignorer les fichiers de configuration Git
+.git
+.gitignore
+
+# Ignorer les répertoires de cache Python
+__pycache__/
+*.pyc
+
+# Ignorer la base de données de développement
+db.sqlite3
+
+# Ignorer les fichiers de configuration de l'IDE
+.idea
