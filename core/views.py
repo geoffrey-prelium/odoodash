@@ -9,86 +9,53 @@ import logging
 from django.core.management import call_command
 from django.contrib import messages
 from django.urls import reverse
+from django.http import HttpResponse, HttpResponseForbidden
+from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
 
-# --- DÉFINITION DES CATÉGORIES D'INDICATEURS ---
-# Ne contient que les VRAIS noms d'indicateurs stockés en base de données
+# --- DÉFINITION DES CATÉGORIES D'INDICATEURS (RÉORGANISÉES) ---
 INDICATOR_CATEGORIES = {
-    'Contrôle des clôtures': [
-        'date cloture annuelle',
-        'derniere cloture fiscale',
-        'periodicite tva',
-        # 'mois_saisie_derniere_tva', # Si vous le réactivez
+    'Général': [
+        'version odoo', 'type de base', 'type hebergement', 'code abonnement',
+        'url odoo', 'nom bdd', 'date expiration base', 'nb societes'
     ],
-    'Données techniques': [
-        'version odoo',
-        'nb modeles personnalises (indicatif)',
-        'nb actions automatisées',
-        'nb utilisateurs actifs',
-        'nb utilisateurs lpde',
-        'nb modules actifs',
-        'date activation base',
-        'type de base',
-        'type hebergement',
-        'code abonnement',
-        'url odoo',
-        'nom bdd',
-        'date expiration base',
-        'nb societes',
-        'nb utilisateurs inactifs > 14j',
-        'nb modeles personnalises (indicatif)',
-        'nb champs personnalises',
-        'erreurs serveur (24h)',
-        'nb actions automatisées',
-        'emails en erreur (30j)',
-        'nombre d\'activités en retard',
-        'nombre de contacts',
-        'contacts en doublon (sim > 90%)',                
-        "nombre de tickets non assignés",
+    'Utilisateurs': [
+        'nb utilisateurs actifs', 'nb utilisateurs inactifs > 14j', 'nb utilisateurs lpde'
+    ],
+    'Technique': [
+        'nb modules actifs', 'date activation base', 'nb modeles personnalises (indicatif)',
+        'nb champs personnalises', 'erreurs serveur (24h)', 'nb actions automatisées',
+        'emails en erreur (30j)'
     ],
     'Comptabilité': [
-        'operations à qualifier',
-        'achats à traiter',
-        'paiements orphelins',
-        'virements internes non soldés',
-        'solde virements internes',
-        'pivot encaissement',
-        'marge brute 30j',
-        "transactions bancaires à rapprocher",
-        "lignes ecritures annee courante",
-        "lignes ecritures annee precedente",
-        "resultat provisoire annee courante",
-        
-        # 'factures_fourn_attente_validation',
+        'date cloture annuelle', 'derniere cloture fiscale', 'periodicite tva',
+        'operations à qualifier', 'achats à traiter', 'resultat provisoire annee courante',
+        'transactions bancaires à rapprocher', 'nombre de factures en retard',
+        'lignes ecritures annee courante', 'lignes ecritures annee precedente',
+        'paiements orphelins', 'virements internes non soldés', 'solde virements internes',
+        'pivot encaissement', 'marge brute 30j'
     ],
-    'Ventes': [
-        "commandes à facturer en retard",
-        "nombre de factures en retard",
-        "nombre de commandes à facturer",
-        "factures clients créées (30j)",
-        "devis créés (30j)",
-        "demandes de prix créées (30j)",
-        "opportunités créées (30j)",       
+    'Ventes & CRM': [
+        'opportunités créées (30j)', 'devis créés (30j)',
+        'nombre de commandes à facturer', 'commandes à facturer en retard',
+        'factures clients créées (30j)', 'nombre d\'activités en retard'
     ],
-    'Achats': [
-        "commandes d'achats à facturer",
-        "commandes d'achats à facturer en retard",
+    'Achats & Stock': [
+        'demandes de prix créées (30j)', 'commandes d\'achats à facturer',
+        'commandes d\'achats à facturer en retard', 'nombre de produits',
+        'produits stockés à coût 0', 'produits en stock négatif',
+        'ajustements d\'inventaire à appliquer', 'nombre de livraisons en retard',
+        'nombre de réceptions en retard'
     ],
-    
-    'Suivi stock': [
-        'produits en stock négatif',
-        'produits stockés à coût 0',
-        "nombre de produits",
-        "ajustements d'inventaire à appliquer",
-        "nombre de livraisons en retard",
-        "nombre de réceptions en retard",        
+    'Données': [
+        'nombre de contacts', 'contacts en doublon (sim > 90%)'
+    ],
+    'Support': [
+        'nombre de tickets non assignés'
     ],
     'Divers': []
 }
-
-
-# --- FIN DÉFINITION CATÉGORIES ---
 
 
 @login_required
@@ -111,28 +78,27 @@ def dashboard_view(request):
     base_qs_for_filter_options = IndicateursHistoriques.objects.all()
     if user_role == 'collaborateur' and user_collab_id_str:
         base_qs_for_filter_options = base_qs_for_filter_options.filter(assigned_odoo_collaborator_id=user_collab_id_str)
-    elif user_role != 'admin':
+    elif user_role not in ['admin', 'super_admin']:
         base_qs_for_filter_options = IndicateursHistoriques.objects.none()
 
-    closing_date_choices = base_qs_for_filter_options.filter(indicator_name='date cloture annuelle') \
+    closing_date_choices = base_qs_for_filter_options.filter(indicator_name__iexact='date cloture annuelle') \
+        .exclude(indicator_value__isnull=True).exclude(indicator_value__exact='') \
         .values_list('indicator_value', flat=True) \
         .distinct().order_by('indicator_value')
+        
     collaborator_choices = base_qs_for_filter_options.exclude(assigned_collaborator_name__isnull=True) \
         .exclude(assigned_collaborator_name='N/A') \
         .exclude(assigned_collaborator_name='') \
         .values_list('assigned_collaborator_name', flat=True) \
         .distinct().order_by('assigned_collaborator_name')
 
-    # Les choix de catégorie pour le dropdown incluent "Divers"
-    category_choices_display = list(INDICATOR_CATEGORIES.keys())  # "Divers" est déjà une clé
+    category_choices_display = list(INDICATOR_CATEGORIES.keys())
 
     latest_indicators_qs = IndicateursHistoriques.objects.none()
     latest_run_timestamp = None
-    all_indicator_names_for_columns = []  # Noms des indicateurs "données" à afficher
     clients_list = []
     client_indicators_dict = {}
 
-    # Déterminer la visibilité des colonnes "Collaborateur" et "Date Extraction"
     show_collaborator_column = False
     show_extraction_date_column = False
 
@@ -142,8 +108,6 @@ def dashboard_view(request):
         latest_run_timestamp = latest_run_agg.get('latest_run')
 
     if latest_run_timestamp:
-        logger.info(
-            f"Dernier timestamp trouvé pour l'utilisateur {user.username} ({user_role}): {latest_run_timestamp}")
         latest_indicators_qs = current_data_qs.filter(
             extraction_timestamp=latest_run_timestamp
         )
@@ -153,52 +117,55 @@ def dashboard_view(request):
                 assigned_collaborator_name=selected_collaborator_name
             )
         if selected_closing_date:
-            # Assurez-vous que le nom de l'indicateur ici est normalisé si besoin
             clients_with_closing_date = latest_indicators_qs.filter(
-                indicator_name='date cloture annuelle',
+                indicator_name__iexact='date cloture annuelle',
                 indicator_value=selected_closing_date
             ).values_list('client_id', flat=True).distinct()
             latest_indicators_qs = latest_indicators_qs.filter(client_id__in=clients_with_closing_date)
 
-        # Noms d'indicateurs potentiels après filtres client/date/collaborateur
-        potential_indicator_names = sorted(list(set(
+        # On récupère tous les noms d'indicateurs potentiels de la BDD (sans tri)
+        potential_indicator_names = list(set(
             name.strip().lower() for name in latest_indicators_qs.values_list('indicator_name', flat=True) if
             name and name.strip()
-        )))
+        ))
 
-        if selected_category == "Divers":
-            all_indicator_names_for_columns = []  # Pas de colonnes d'indicateurs de données
-            show_collaborator_column = True
-            show_extraction_date_column = True
-        elif selected_category and selected_category in INDICATOR_CATEGORIES:
-            # Noms d'indicateurs pour la catégorie sélectionnée (normalisés)
-            category_indicator_names = [name.strip().lower() for name in INDICATOR_CATEGORIES[selected_category]]
+        # --- LOGIQUE DE TRI PERSONNALISÉ DES COLONNES ---
+        available_indicators_set = set(potential_indicator_names)
+
+        if selected_category and selected_category in INDICATOR_CATEGORIES:
+            # On prend les indicateurs dans l'ordre défini dans la catégorie choisie
+            category_indicator_names = INDICATOR_CATEGORIES[selected_category]
+            # On ne garde que ceux qui sont réellement disponibles dans les données actuelles
             all_indicator_names_for_columns = [
-                name for name in potential_indicator_names if name in category_indicator_names
+                name for name in category_indicator_names if name in available_indicators_set
             ]
-            # Pour les catégories spécifiques autres que "Divers", on n'affiche pas les colonnes méta
             show_collaborator_column = False
             show_extraction_date_column = False
-        else:  # "Toutes les catégories" (selected_category est vide)
-            all_indicator_names_for_columns = potential_indicator_names
+        else:
+            # Pour "Toutes les catégories", on crée une liste complète en respectant l'ordre de chaque catégorie
+            all_defined_indicators = []
+            for category in INDICATOR_CATEGORIES.values():
+                all_defined_indicators.extend(category)
+            
+            # On filtre cette liste ordonnée pour ne garder que les indicateurs disponibles
+            all_indicator_names_for_columns = [
+                name for name in all_defined_indicators if name in available_indicators_set
+            ]
             show_collaborator_column = True
             show_extraction_date_column = True
 
-        if all_indicator_names_for_columns or selected_category == "Divers":
-            # Si on affiche des colonnes d'indicateurs OU si on est dans la catégorie "Divers" (qui a ses propres colonnes fixes)
-            # On ne filtre plus latest_indicators_qs par indicator_name ici,
-            # car le template s'en chargera pour les colonnes dynamiques.
-            # latest_indicators_qs = latest_indicators_qs.filter(indicator_name__in=all_indicator_names_for_columns) # Supprimé
+        # La catégorie "Divers" n'affiche aucune colonne d'indicateur de données
+        if selected_category == "Divers":
+            all_indicator_names_for_columns = []
+        # --- FIN DE LA LOGIQUE DE TRI ---
 
-            latest_indicators_qs = latest_indicators_qs.select_related('client').order_by('client__client_name',
-                                                                                          'indicator_name')
+        if all_indicator_names_for_columns or selected_category == "Divers":
+            latest_indicators_qs = latest_indicators_qs.select_related('client').order_by('client__client_name', 'indicator_name')
 
             client_indicators_temp = defaultdict(list)
             clients_processed_temp = set()
 
             for indicator in latest_indicators_qs:
-                # On stocke tous les indicateurs du client pour la dernière extraction,
-                # le template choisira lesquels afficher dans les colonnes dynamiques.
                 client_indicators_temp[indicator.client].append(indicator)
                 clients_processed_temp.add(indicator.client)
 
@@ -207,34 +174,29 @@ def dashboard_view(request):
         else:
             clients_list = []
             client_indicators_dict = {}
-    else:
-        logger.info(
-            f"Aucun timestamp trouvé pour l'utilisateur {user.username} ({user_role}) ou aucun indicateur après filtrage initial.")
 
     context = {
         'user_profile': profile,
         'user_role': user_role,
         'client_indicators': client_indicators_dict,
         'clients_list': clients_list,
-        'all_indicator_names': all_indicator_names_for_columns,  # Noms pour les colonnes dynamiques
+        'all_indicator_names': all_indicator_names_for_columns,
         'latest_run_timestamp': latest_run_timestamp,
-        'page_title': 'Tableau de Bord OdooDash',
+        'page_title': 'Tableau de bord OdooDash',
         'closing_date_choices': closing_date_choices,
         'collaborator_choices': collaborator_choices,
-        'category_choices': category_choices_display,  # Utilise les clés du dict + "Divers"
+        'category_choices': category_choices_display,
         'selected_closing_date': selected_closing_date,
         'selected_collaborator_name': selected_collaborator_name,
         'selected_category': selected_category,
-        'show_collaborator_column': show_collaborator_column,  # Nouvelle variable de contexte
-        'show_extraction_date_column': show_extraction_date_column,  # Nouvelle variable de contexte
+        'show_collaborator_column': show_collaborator_column,
+        'show_extraction_date_column': show_extraction_date_column,
     }
     return render(request, 'core/dashboard.html', context)
 
 
-# --- VUE POUR EXÉCUTER LA COMMANDE D'EXTRACTION ---
-@user_passes_test(lambda u: u.is_staff and u.is_superuser)
+@user_passes_test(lambda u: u.is_staff)
 def trigger_fetch_indicators_view(request):
-    # ... (code inchangé)
     if request.method == 'POST':
         try:
             logger.info(f"Lancement de fetch_indicators par l'utilisateur: {request.user.username}")
@@ -245,7 +207,25 @@ def trigger_fetch_indicators_view(request):
             logger.error(f"Erreur lors du lancement de fetch_indicators via l'admin par {request.user.username}: {e}",
                          exc_info=True)
             messages.error(request, f"Une erreur est survenue lors du lancement de l'extraction : {e}")
-        return redirect(reverse('admin:index'))
-    else:
-        messages.warning(request, "Cette action doit être déclenchée via un formulaire POST.")
-        return redirect(reverse('admin:index'))
+    return redirect(reverse('admin:index'))
+
+
+@csrf_exempt
+def scheduler_fetch_indicators_view(request):
+    """
+    Vue sécurisée destinée à être appelée UNIQUEMENT par Google Cloud Scheduler.
+    """
+    if request.headers.get("X-CloudScheduler") != "true":
+        logger.warning("Tentative d'accès non autorisée au déclencheur du scheduler.")
+        return HttpResponseForbidden("Accès non autorisé.")
+
+    if request.method == 'POST':
+        try:
+            logger.info("Lancement de fetch_indicators par le scheduler Cloud.")
+            call_command('fetch_indicators')
+            return HttpResponse("Extraction des indicateurs lancée avec succès par le scheduler.", status=200)
+        except Exception as e:
+            logger.error(f"Erreur lors du lancement de fetch_indicators via le scheduler: {e}", exc_info=True)
+            return HttpResponse(f"Erreur lors du lancement de l'extraction : {e}", status=500)
+    
+    return HttpResponse("Cette URL ne peut être appelée qu'avec la méthode POST.", status=405)

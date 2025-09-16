@@ -12,13 +12,20 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Étape 5: Copier tout le code de l'application dans le conteneur
+# --- MODIFICATION CLÉ ---
+# Définir une variable d'environnement explicite pour la production.
+# Cela garantit que les commandes suivantes s'exécutent en mode production.
+ENV DJANGO_ENV=production
+# --- FIN MODIFICATION ---
+
+# Étape 5: Copier tout le code de l'application
 COPY . .
 
 # Étape 6: Rendre le script de démarrage exécutable
 RUN chmod +x /app/entrypoint.sh
 
 # Étape 7: Exécuter la commande collectstatic de Django
+# Grâce à DJANGO_ENV, cette commande saura qu'elle est en production.
 RUN python manage.py collectstatic --noinput
 
 # Étape 8: Exposer le port que Cloud Run écoutera

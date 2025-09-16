@@ -137,18 +137,30 @@
                  <img src="https://www.prelium.fr/web/image/123910-495664e7/horizon%20prelium-4.webp" alt="Horizon Prelium" class="h-8 md:h-10 mx-5">
             </div>
 
-            <!-- Groupe de Droite: Infos Utilisateur -->
+            <!-- Groupe de Droite: Infos Utilisateur et Lien Admin -->
             <div class="flex items-center order-2 lg:order-3">
                 {% if user.is_authenticated %}
-                    <div class="text-xs sm:text-sm text-slate-600 whitespace-nowrap">
-                        Connecté : <strong class="text-slate-800">{{ user.username }}</strong>
-                        {% if user_profile %}
-                            (<span class="font-medium text-indigo-600">{{ user_profile.get_role_display }}</span>)
+                    <div class="text-xs sm:text-sm text-slate-600 whitespace-nowrap flex items-center space-x-4">
+                        
+                        {# --- AJOUT DU LIEN ADMIN --- #}
+                        {% if user_profile.role == 'admin' %}
+                            <a href="{% url 'admin:index' %}" target="_blank" 
+                               class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline transition-colors">
+                               [Portail Admin]
+                            </a>
                         {% endif %}
-                        <form method="post" action="{% url 'logout' %}" style="display: inline;" class="ml-2 md:ml-4">
-                            {% csrf_token %}
-                            <button type="submit" class="logout-button">[Se déconnecter]</button>
-                        </form>
+                        {# --- FIN AJOUT --- #}
+
+                        <div class="flex items-center space-x-2">
+                            <span>Connecté : <strong class="text-slate-800">{{ user.username }}</strong></span>
+                            {% if user_profile %}
+                                (<span class="font-medium text-indigo-600">{{ user_profile.get_role_display }}</span>)
+                            {% endif %}
+                            <form method="post" action="{% url 'logout' %}" style="display: inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="logout-button">[Se déconnecter]</button>
+                            </form>
+                        </div>
                     </div>
                 {% endif %}
             </div>
@@ -221,22 +233,26 @@
             </div>
 
             <div class="table-container">
-                <table class="min-w-full">
+                <table class="min-w-full bg-white">
                     <thead>
                         <tr>
                             <th class="sticky-col">Client</th>
+                            
+                            {# Colonnes pour les indicateurs de données #}
                             {% for indicator_name in all_indicator_names %}
-                                <th class="whitespace-nowrap col-{{ indicator_name|slugify }}">{{ indicator_name|title }}</th>
+                                <th class="max-w-32 text-center">{{ indicator_name|title }}</th>
                             {% endfor %}
+
+                            {# Colonnes "Divers" #}
                             {% if show_collaborator_column %}
-                                <th class="col-collaborateur">Collaborateur Assigné</th>
+                                <th class="text-center">Collaborateur Assigné</th>
                             {% endif %}
                             {% if show_extraction_date_column %}
-                                <th class="whitespace-nowrap">Date Extraction</th>
+                                <th class="max-w-32 text-center">Date Extraction</th>
                             {% endif %}
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-200">
+                    <tbody class="divide-y divide-gray-200">
                         {% for client in clients_list %}
                             {% with indicators_for_this_client=client_indicators|get_item:client %}
                                 {% with indicators_dict=indicators_for_this_client|dict_from_list:'indicator_name' %}
@@ -247,27 +263,23 @@
                                             </a>
                                         </td>
                                         
+                                        {# Cellules pour les indicateurs de données #}
                                         {% for indicator_name in all_indicator_names %}
-                                            <td class="indicator-value col-{{ indicator_name|slugify }}">
+                                            <td class="indicator-value text-center">
                                                 {% with indicator=indicators_dict|get_item:indicator_name %}
-                                                    {% if indicator_name == 'url odoo' and indicator.indicator_value %}
-                                                        <a href="{{ indicator.indicator_value }}" target="_blank" rel="noopener noreferrer" class="client-link underline">
-                                                            Ouvrir
-                                                        </a>
-                                                    {% else %}
-                                                        {{ indicator.indicator_value|default:"-" }}
-                                                    {% endif %}
+                                                    {{ indicator.indicator_value|default:"-" }}
                                                 {% endwith %}
                                             </td>
                                         {% endfor %}
                                         
+                                        {# Cellules pour les colonnes "Divers" #}
                                         {% if indicators_for_this_client %}
                                             {% with first_indicator=indicators_for_this_client.0 %}
                                                 {% if show_collaborator_column %}
-                                                    <td class="col-collaborateur">{{ first_indicator.assigned_collaborator_name|format_collab_name|default:"N/A" }}</td>
+                                                    <td class="text-center">{{ first_indicator.assigned_collaborator_name|format_collab_name|default:"N/A" }}</td>
                                                 {% endif %}
                                                 {% if show_extraction_date_column %}
-                                                    <td class="whitespace-nowrap text-sm text-slate-500">{{ first_indicator.extraction_timestamp|date:"d/m/Y H:i"|default:"-" }}</td>
+                                                    <td class="whitespace-nowrap text-sm text-gray-500 text-center">{{ first_indicator.extraction_timestamp|date:"d/m/Y H:i"|default:"-" }}</td>
                                                 {% endif %}
                                             {% endwith %}
                                         {% else %}
@@ -286,7 +298,7 @@
             <div class="bg-sky-50 border border-sky-200 text-sky-800 p-6 rounded-xl mt-6 shadow-sm">
                 <div class="flex">
                     <div class="py-1">
-                        <svg class="h-6 w-6 text-sky-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 10 14.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 11 18h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 12 21.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 13 24.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 14 27.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 15 30.5h.253a.25.25 0 0 1 .244.304l-.459 2.066a.75.75 0 1 0 1.408.438l.46-2.067a.25.25 0 0 1 .243-.304H17a1 1 0 1 1 0 2h-1.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H15a1 1 0 1 1 0-2h-.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H13a1 1 0 1 1 0-2h-.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H11a1 1 0 1 1 0-2H9.25a.75.75 0 0 0 0 1.5H9Z" clip-rule="evenodd" /></svg>
+                        <svg class="h-6 w-6 text-sky-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 10 14.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 11 18h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 12 21.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 13 24.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 14 27.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 15 30.5h.253a.25.25 0 0 1 .244.304l-.459 2.066a.75.75 0 1 0 1.408.438l.46-2.067a.25.25 0 0 1 .243-.304H17a1 1 0 1 1 0 2h-1.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H15a1 1 0 1 1 0-2h-.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H11a1 1 0 1 1 0-2H9.25a.75.75 0 0 0 0 1.5H9Z" clip-rule="evenodd" /></svg>
                     </div>
                     <div>
                         <p class="font-bold text-lg mb-1">Aucune Donnée à Afficher</p>
