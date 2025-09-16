@@ -2,9 +2,6 @@
 
 OdooDash est une application web développée avec le framework Django. Son objectif est de fournir un tableau de bord centralisé qui agrège et affiche des indicateurs de performance clés (KPIs) extraits en temps réel des bases de données Odoo des clients d'un cabinet comptable.
 
-![Capture d'écran du Dashboard OdooDash](URL_VERS_VOTRE_CAPTURE_D_ECRAN.png)
-*(Pense à remplacer l'URL ci-dessus par une vraie capture d'écran de ton application)*
-
 ---
 
 ## ✨ Fonctionnalités
@@ -42,7 +39,7 @@ Suivez ces étapes pour mettre en place un environnement de développement local
 
 1.  **Cloner le dépôt**
     ```bash
-    git clone [https://github.com/VOTRE_NOM_UTILISATEUR/odoodash.git](https://github.com/VOTRE_NOM_UTILISATEUR/odoodash.git)
+    git clone [https://github.com/geoffrey-prelium/odoodash.git](https://github.com/geoffrey-prelium/odoodash.git)
     cd oodash
     ```
 
