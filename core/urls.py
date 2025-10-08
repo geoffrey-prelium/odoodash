@@ -1,5 +1,6 @@
 from django.urls import path
 from .views import dashboard_view, trigger_fetch_indicators_view, scheduler_fetch_indicators_view
+from . import views
 
 app_name = 'core'
 
@@ -12,5 +13,9 @@ urlpatterns = [
     
     # URL sécurisée pour le planificateur Google Cloud Scheduler
     path('tasks/trigger-fetch/', scheduler_fetch_indicators_view, name='scheduler_trigger_fetch'),
+
+    # Cette URL sera appelée par notre JavaScript pour obtenir les suggestions
+    path('api/search-clients/', views.search_clients_autocomplete, name='api-search-clients'),
+
 ]
 

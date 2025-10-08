@@ -15,6 +15,7 @@ class UserProfile(models.Model):
     ROLE_CHOICES = [
         ('admin', 'Administrateur'),
         ('collaborateur', 'Collaborateur'),
+        ('super_admin', 'Super Administrateur'),
     ]
     role = models.CharField(
         max_length=20,
@@ -62,6 +63,11 @@ class ClientsOdoo(models.Model):
     client_odoo_db = models.CharField(max_length=255, null=False, blank=False, verbose_name="Nom BDD Odoo Client")
     client_odoo_api_user = models.CharField(max_length=255, null=False, blank=False, verbose_name="Utilisateur API Odoo Client")
     client_odoo_encrypted_api_key = models.TextField(null=False, blank=False, verbose_name="Clé API Odoo Client (Chiffrée)")
+    is_prelium = models.BooleanField(
+        default=False,
+        verbose_name="Filiale Prelium",
+        help_text="Cocher si ce client fait partie de la filiale Prelium."
+    )
 
     def __str__(self):
         return self.client_name

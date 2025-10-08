@@ -4,6 +4,7 @@ from django.utils import timezone
 from datetime import datetime, timedelta
 from core.models import ConfigurationCabinet, ClientsOdoo, IndicateursHistoriques, ClientOdooStatus
 from core.utils import decrypt_value, connect_odoo
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class Command(BaseCommand):
     IND_EXPIRATION_DATE = "date expiration base"
     IND_COMPANY_COUNT = "nb societes"
     IND_INACTIVE_USERS_14D = "nb utilisateurs inactifs > 14j"
-    IND_CUSTOM_MODELS = "nb modeles personnalises (indicatif)"
+    # IND_CUSTOM_MODELS = "nb modeles personnalises (indicatif)"
     IND_CUSTOM_FIELDS = "nb champs personnalises"
     IND_SERVER_ERRORS = "erreurs serveur (24h)"
     IND_AUTOMATED_ACTIONS = "nb actions automatisées"
@@ -62,7 +63,6 @@ class Command(BaseCommand):
     IND_UNASSIGNED_TICKETS = "nombre de tickets non assignés"
     IND_ACCOUNT_MOVE_LINES_CURRENT_YEAR = "lignes ecritures annee courante"
     IND_ACCOUNT_MOVE_LINES_PREVIOUS_YEAR = "lignes ecritures annee precedente"
-    IND_PROVISIONAL_RESULT = "resultat provisoire annee courante"
 
     # --- MAPPING DES NOMS DE CHAMPS PAR VERSION D'ODOO ---
     FIELD_MAPPING = {
@@ -91,14 +91,18 @@ class Command(BaseCommand):
     def _fetch_indicator(self, indicator_name, func, *args, **kwargs):
         """
         Helper générique qui exécute une fonction d'extraction, gère les logs et les erreurs.
+        VERSION DE DÉBOGAGE : Affiche le traceback complet.
         """
-        self.stdout.write(f"   - Recherche '{indicator_name}'...")
+        self.stdout.write(f"     - Recherche '{indicator_name}'...")
         try:
             result = func(*args, **kwargs)
             return result
         except Exception as e:
-            self.stderr.write(self.style.ERROR(f"   - Erreur extraction '{indicator_name}': {e}"))
-            return None
+            import traceback
+            self.stderr.write(self.style.ERROR(f"     - Erreur extraction '{indicator_name}': {e}"))
+            # LA LIGNE SUIVANTE EST CRUCIALE POUR LE DÉBOGAGE
+            self.stderr.write(self.style.ERROR(traceback.format_exc()))
+            return "Erreur" # On retourne "Erreur" pour que ce soit visible dans le dashboard
 
     def get_account_balance_sum_for_period(self, object_proxy, db, uid, api_key, account_prefixes, company_id, date_from_str, date_to_str):
         """
@@ -179,13 +183,13 @@ class Command(BaseCommand):
             ClientOdooStatus.objects.update_or_create(client=client_conf, defaults={'last_connection_attempt': last_attempt_time, 'connection_successful': bool(uid_client), 'last_error_message': conn_error if conn_error else None})
             
             indicators_data[self.IND_ODOO_VERSION] = odoo_version if odoo_version else "Inconnue"
-            self.stdout.write(self.style.SUCCESS(f"   - {self.IND_ODOO_VERSION}: OK ({indicators_data[self.IND_ODOO_VERSION]})"))
+            self.stdout.write(self.style.SUCCESS(f"     - {self.IND_ODOO_VERSION}: OK ({indicators_data[self.IND_ODOO_VERSION]})"))
             
             # --- URL ET NOM DE BDD SONT TOUJOURS DISPONIBLES ---
             indicators_data[self.IND_ODOO_URL] = client_conf.client_odoo_url
-            self.stdout.write(self.style.SUCCESS(f"   - {self.IND_ODOO_URL}: OK ({client_conf.client_odoo_url})"))
+            self.stdout.write(self.style.SUCCESS(f"     - {self.IND_ODOO_URL}: OK ({client_conf.client_odoo_url})"))
             indicators_data[self.IND_DB_NAME] = client_conf.client_odoo_db
-            self.stdout.write(self.style.SUCCESS(f"   - {self.IND_DB_NAME}: OK ({client_conf.client_odoo_db})"))
+            self.stdout.write(self.style.SUCCESS(f"     - {self.IND_DB_NAME}: OK ({client_conf.client_odoo_db})"))
 
             if not uid_client:
                 self.stderr.write(self.style.ERROR(f">>> Échec authentification Odoo pour {client_conf.client_name}. {conn_error}"))
@@ -210,14 +214,14 @@ class Command(BaseCommand):
                         collab_info = partner_data[0][self.FIELD_COLLABORATOR_CABINET]
                         final_assigned_collab_id_str = str(collab_info[0])
                         collaborator_display_name = collab_info[1]
-                        self.stdout.write(self.style.SUCCESS(f"   - Collaborateur assigné: {collaborator_display_name}"))
+                        self.stdout.write(self.style.SUCCESS(f"     - Collaborateur assigné: {collaborator_display_name}"))
 
             user_info = self._fetch_indicator("Company ID", self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'res.users', 'read', args=[[uid_client]], kwargs={'fields': ['company_id']})
             company_id = user_info[0]['company_id'][0] if user_info and user_info[0].get('company_id') else 1
 
-            # --- [CORRECTION] VÉRIFICATION PRÉALABLE DES MODULES INSTALLÉS ---
-            self.stdout.write("   - Vérification des modules clés installés...")
-            modules_to_check = ['stock', 'purchase', 'sale', 'crm', 'helpdesk', 'account', 'data_cleaning']
+            # --- VÉRIFICATION PRÉALABLE DES MODULES INSTALLÉS ---
+            self.stdout.write("     - Vérification des modules clés installés...")
+            modules_to_check = ['stock', 'purchase', 'sale', 'crm', 'helpdesk', 'account', 'data_cleaning', 'data_merge']
             is_module_installed = {}
             for module_name in modules_to_check:
                 try:
@@ -229,7 +233,7 @@ class Command(BaseCommand):
                     is_module_installed[module_name] = count > 0
                 except Exception:
                     is_module_installed[module_name] = False # Précaution
-            self.stdout.write(f"   - Statut modules: {is_module_installed}")
+            self.stdout.write(f"     - Statut modules: {is_module_installed}")
 
             # --- AJOUT DES INDICATEURS ---
 
@@ -239,10 +243,57 @@ class Command(BaseCommand):
                 unassigned_tickets_count = self._fetch_indicator(self.IND_UNASSIGNED_TICKETS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'helpdesk.ticket', 'search_count', args=[unassigned_tickets_domain])
                 if unassigned_tickets_count is not None:
                     indicators_data[self.IND_UNASSIGNED_TICKETS] = unassigned_tickets_count
-                    self.stdout.write(self.style.SUCCESS(f"   - {self.IND_UNASSIGNED_TICKETS}: OK ({unassigned_tickets_count})"))
+                    self.stdout.write(self.style.SUCCESS(f"     - {self.IND_UNASSIGNED_TICKETS}: OK ({unassigned_tickets_count})"))
             else:
                 indicators_data[self.IND_UNASSIGNED_TICKETS] = "N/A"
-                self.stdout.write(self.style.WARNING(f"   - {self.IND_UNASSIGNED_TICKETS}: Module Assistance non installé"))
+                self.stdout.write(self.style.WARNING(f"     - {self.IND_UNASSIGNED_TICKETS}: Module Assistance non installé"))
+
+            # --- INDICATEUR : Code d'Abonnement (logique robuste) ---
+            try:
+                self.stdout.write(f"     - Recherche '{self.IND_SUBSCRIPTION_CODE}'...")
+                sub_code = "N/A" # Valeur par défaut
+
+                # 1. Vérifier si le modèle 'sale.subscription' existe
+                model_exists_count = self._execute_odoo_kw(
+                    object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
+                    'ir.model', 'search_count', args=[[('model', '=', 'sale.subscription')]]
+                )
+
+                if model_exists_count == 0:
+                    self.stdout.write(self.style.WARNING(f"          - Module 'Abonnements' non installé pour ce client."))
+                    sub_code = "N/A (module absent)"
+                else:
+                    # 2. Si le module existe, rechercher l'abonnement
+                    company_data = self._execute_odoo_kw(
+                        object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
+                        'res.company', 'read', args=[[company_id]], kwargs={'fields': ['partner_id']}
+                    )
+                    if company_data and company_data[0].get('partner_id'):
+                        company_partner_id = company_data[0]['partner_id'][0]
+                        
+                        subscription_domain = [
+                            ('partner_id', '=', company_partner_id),
+                        ]
+                        subscriptions = self._execute_odoo_kw(
+                            object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
+                            'sale.subscription', 'search_read',
+                            args=[subscription_domain],
+                            kwargs={'fields': ['name'], 'limit': 1, 'order': 'create_date desc'}
+                        )
+                        
+                        if subscriptions:
+                            sub_code = subscriptions[0]['name']
+                        else:
+                            sub_code = "Aucun abonnement actif"
+                    else:
+                        sub_code = "Partenaire société introuvable"
+
+                indicators_data[self.IND_SUBSCRIPTION_CODE] = sub_code
+                self.stdout.write(self.style.SUCCESS(f"     - {self.IND_SUBSCRIPTION_CODE}: OK ({sub_code})"))
+
+            except Exception as e:
+                self.stderr.write(self.style.ERROR(f"     - Erreur extraction '{self.IND_SUBSCRIPTION_CODE}': {e}"))
+                indicators_data[self.IND_SUBSCRIPTION_CODE] = "Erreur" # On stocke "Erreur" au lieu de None
 
             # Indicateur: Nombre de transactions bancaires à rapprocher
             bank_reconcile_domain = [('is_reconciled', '=', False)]
@@ -258,10 +309,10 @@ class Command(BaseCommand):
             late_invoices_count = self._fetch_indicator(self.IND_LATE_INVOICES, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'account.move', 'search_count', args=[late_invoices_domain])
             if late_invoices_count is not None:
                 indicators_data[self.IND_LATE_INVOICES] = late_invoices_count
-                self.stdout.write(self.style.SUCCESS(f"   - {self.IND_LATE_INVOICES}: OK ({late_invoices_count})"))
+                self.stdout.write(self.style.SUCCESS(f"     - {self.IND_LATE_INVOICES}: OK ({late_invoices_count})"))
             else:
                 indicators_data[self.IND_LATE_INVOICES] = "N/A"
-                self.stdout.write(self.style.WARNING(f"   - {self.IND_LATE_INVOICES}: Module Compta non installé ou erreur"))
+                self.stdout.write(self.style.WARNING(f"     - {self.IND_LATE_INVOICES}: Module Compta non installé ou erreur"))
 
             # --- Indicateurs liés au module STOCK ---
             if is_module_installed.get('stock'):
@@ -299,7 +350,7 @@ class Command(BaseCommand):
             else:
                 for ind in [self.IND_LATE_RECEIPTS, self.IND_LATE_DELIVERIES, self.IND_PENDING_INVENTORY, self.IND_NEGATIVE_STOCK, self.IND_STOCKED_ZERO_COST]:
                     indicators_data[ind] = "N/A"
-                    self.stdout.write(self.style.WARNING(f"   - {ind}: Module Inventaire non installé"))
+                    self.stdout.write(self.style.WARNING(f"     - {ind}: Module Inventaire non installé"))
             
             # --- Indicateurs liés au module ACHATS ---
             if is_module_installed.get('purchase'):
@@ -316,14 +367,14 @@ class Command(BaseCommand):
 
                 # Demandes de prix récentes
                 time_30d_ago_str = (timezone.now() - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
-                recent_rfq_domain = [('create_date', '>=', time_30d_ago_str), ('state', 'in', ['draft', 'sent', 'to approve'])]
+                recent_rfq_domain = [('create_date', '>=', time_30d_ago_str), ('state', 'in', ['draft', 'sent', 'to approve', 'purchase'])]
                 recent_rfq_count = self._fetch_indicator(self.IND_RECENT_RFQ, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'purchase.order', 'search_count', args=[recent_rfq_domain])
                 indicators_data[self.IND_RECENT_RFQ] = recent_rfq_count if recent_rfq_count is not None else 0
 
             else:
                 for ind in [self.IND_LATE_PO_TO_INVOICE, self.IND_PO_TO_INVOICE, self.IND_RECENT_RFQ]:
                     indicators_data[ind] = "N/A"
-                    self.stdout.write(self.style.WARNING(f"   - {ind}: Module Achats non installé"))
+                    self.stdout.write(self.style.WARNING(f"     - {ind}: Module Achats non installé"))
 
             # --- Indicateurs VENTES & CRM ---
             if is_module_installed.get('sale'):
@@ -338,15 +389,15 @@ class Command(BaseCommand):
                 to_invoice_count = self._fetch_indicator(self.IND_ORDERS_TO_INVOICE, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'sale.order', 'search_count', args=[to_invoice_domain])
                 indicators_data[self.IND_ORDERS_TO_INVOICE] = to_invoice_count if to_invoice_count is not None else 0
                 
-                # Devis récents
                 time_30d_ago_str = (timezone.now() - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
-                recent_quotes_domain = [('create_date', '>=', time_30d_ago_str), ('state', 'in', ['draft', 'sent'])]
+                recent_quotes_domain = [('create_date', '>=', time_30d_ago_str), ('state', 'in', ['draft', 'sent', 'sale'])]
                 recent_quotes_count = self._fetch_indicator(self.IND_RECENT_QUOTATIONS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'sale.order', 'search_count', args=[recent_quotes_domain])
                 indicators_data[self.IND_RECENT_QUOTATIONS] = recent_quotes_count if recent_quotes_count is not None else 0
+
             else:
                 for ind in [self.IND_LATE_ORDERS_TO_INVOICE, self.IND_ORDERS_TO_INVOICE, self.IND_RECENT_QUOTATIONS]:
                     indicators_data[ind] = "N/A"
-                    self.stdout.write(self.style.WARNING(f"   - {ind}: Module Ventes non installé"))
+                    self.stdout.write(self.style.WARNING(f"     - {ind}: Module Ventes non installé"))
             
             if is_module_installed.get('crm'):
                 # Opportunités récentes
@@ -356,7 +407,7 @@ class Command(BaseCommand):
                 indicators_data[self.IND_RECENT_OPPORTUNITIES] = recent_opps_count if recent_opps_count is not None else 0
             else:
                 indicators_data[self.IND_RECENT_OPPORTUNITIES] = "N/A"
-                self.stdout.write(self.style.WARNING(f"   - {self.IND_RECENT_OPPORTUNITIES}: Module CRM non installé"))
+                self.stdout.write(self.style.WARNING(f"     - {self.IND_RECENT_OPPORTUNITIES}: Module CRM non installé"))
 
 
             # Indicateur: Nombre de factures clients créées depuis 30 jours
@@ -375,17 +426,69 @@ class Command(BaseCommand):
             else:
                 indicators_data[self.IND_PRODUCTS_COUNT] = 0
 
-            # Indicateur: Nombre de contacts en doublons
-            if is_module_installed.get('data_cleaning'):
-                duplicate_domain = [('res_model_id.model', '=', 'res.partner')]
-                duplicate_count = self._fetch_indicator(self.IND_DUPLICATE_CONTACTS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'data_cleaning.record', 'search_count', args=[duplicate_domain])
-                indicator_value = str(duplicate_count) if duplicate_count is not None else "0"
-                indicators_data[self.IND_DUPLICATE_CONTACTS] = indicator_value
-                self.stdout.write(self.style.SUCCESS(f"   - {self.IND_DUPLICATE_CONTACTS}: OK ({indicator_value})"))
-            else:
-                indicators_data[self.IND_DUPLICATE_CONTACTS] = "no module data cleaning"
-                self.stdout.write(self.style.WARNING(f"   - {self.IND_DUPLICATE_CONTACTS}: Module data_cleaning non installé"))
+            # --- DÉBUT BLOC CORRIGÉ ---
+            
+            # --- Indicateur: Nombre de contacts en doublon (Toutes sociétés, log. de groupement) ---
+            
+            # On vérifie si l'un des modules de déduplication est installé
+            if is_module_installed.get('data_merge') or is_module_installed.get('data_cleaning'):
+                try:
+                    # Étape 1 : Domaine pour récupérer TOUS les doublons, toutes sociétés confondues (les 60)
+                    model_to_use = 'data_merge.record'
+                    duplicate_domain = [
+                        ('res_model_id.model', '=', 'res.partner')
+                        # Pas de filtre company_id pour avoir le total
+                    ]
 
+                    # Étape 2 : Récupérer les fiches avec leur 'group_id' pour le traitement en Python
+                    all_duplicates_data = self._fetch_indicator(
+                        "Lecture de toutes les fiches de doublons",
+                        self._execute_odoo_kw,
+                        object_proxy_client,
+                        client_conf.client_odoo_db,
+                        uid_client,
+                        client_api_key,
+                        model_to_use,
+                        'search_read',
+                        args=[duplicate_domain],
+                        kwargs={'fields': ['group_id']}
+                    )
+
+                    final_count = 0
+                    if all_duplicates_data and isinstance(all_duplicates_data, list):
+                        # Étape 3 : Grouper les 60 fiches par leur group_id
+                        groups = defaultdict(list)
+                        for record in all_duplicates_data:
+                            if record.get('group_id'):
+                                group_id = record['group_id'][0]
+                                groups[group_id].append(record)
+                        
+                        # Étape 4 : Compter uniquement les fiches dans les groupes ayant plus d'un membre
+                        # C'est la logique "métier" d'Odoo pour ne montrer que les doublons "actifs".
+                        valid_records_count = sum(
+                            len(records_in_group) 
+                            for records_in_group in groups.values() 
+                            if len(records_in_group) > 1
+                        )
+                        final_count = valid_records_count
+                    
+                    indicator_value = str(final_count)
+                    indicators_data[self.IND_DUPLICATE_CONTACTS] = indicator_value
+                    self.stdout.write(self.style.SUCCESS(f"     - {self.IND_DUPLICATE_CONTACTS}: OK ({indicator_value})"))
+
+                except Exception as e:
+                    import traceback
+                    self.stderr.write(self.style.ERROR(f"     - Erreur extraction complexe '{self.IND_DUPLICATE_CONTACTS}': {e}"))
+                    self.stderr.write(self.style.ERROR(traceback.format_exc()))
+                    indicators_data[self.IND_DUPLICATE_CONTACTS] = "Erreur"
+            
+            else:
+                indicators_data[self.IND_DUPLICATE_CONTACTS] = "N/A"
+                self.stdout.write(self.style.WARNING(f"     - {self.IND_DUPLICATE_CONTACTS}: Module de déduplication non installé"))
+
+            # L'indentation de ce qui suit est maintenant correcte.
+            # Tout ce code est au même niveau que le 'if' ci-dessus.
+            
             # Indicateur: Nombre de contacts
             contacts_count = self._fetch_indicator(self.IND_CONTACTS_COUNT, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'res.partner', 'search_count', args=[[]])
             indicators_data[self.IND_CONTACTS_COUNT] = contacts_count if contacts_count is not None else 0
@@ -396,13 +499,36 @@ class Command(BaseCommand):
             indicators_data[self.IND_OVERDUE_ACTIVITIES] = overdue_count if overdue_count is not None else "N/A"
 
             # Indicateur: Nombre d’e-mails non envoyés/en erreur sur les 30 derniers jours
+            time_30d_ago_str = (timezone.now() - timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
             failed_emails_domain = [('state', 'in', ['exception', 'cancel']), ('create_date', '>=', time_30d_ago_str)]
             failed_email_count = self._fetch_indicator(self.IND_FAILED_EMAILS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'mail.mail', 'search_count', args=[failed_emails_domain])
             indicators_data[self.IND_FAILED_EMAILS] = failed_email_count if failed_email_count is not None else "N/A"
 
-            # Indicateur: Nombre d'actions automatisées
-            automated_actions_count = self._fetch_indicator(self.IND_AUTOMATED_ACTIONS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'ir.actions.server', 'search_count', args=[[]])
-            indicators_data[self.IND_AUTOMATED_ACTIONS] = automated_actions_count if automated_actions_count is not None else 0
+            # INDICATEUR : Nombre d'Actions Automatisées ---
+            try:
+                self.stdout.write(f"     - Recherche '{self.IND_AUTOMATED_ACTIONS}'...")
+                
+                domain = [('active', '=', True)]
+                
+                count = self._execute_odoo_kw(
+                    object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
+                    'base.automation',
+                    'search_count',
+                    args=[domain]
+                )
+                
+                indicators_data[self.IND_AUTOMATED_ACTIONS] = count if count is not None else 0
+                self.stdout.write(self.style.SUCCESS(f"     - {self.IND_AUTOMATED_ACTIONS}: OK ({count})"))
+
+            except Exception as e:
+                if "base.automation" in str(e):
+                    self.stdout.write(self.style.WARNING(f"     - {self.IND_AUTOMATED_ACTIONS}: Le modèle n'existe pas sur cette version d'Odoo."))
+                    indicators_data[self.IND_AUTOMATED_ACTIONS] = "N/A"
+                else:
+                    import traceback
+                    self.stderr.write(self.style.ERROR(f"     - Erreur extraction '{self.IND_AUTOMATED_ACTIONS}': {e}"))
+                    self.stderr.write(self.style.ERROR(traceback.format_exc()))
+                    indicators_data[self.IND_AUTOMATED_ACTIONS] = "Erreur"
 
             # Indicateur: Taux d'erreurs serveur (tracebacks) sur les dernières 24h
             time_24h_ago_str = (timezone.now() - timedelta(hours=24)).strftime('%Y-%m-%d %H:%M:%S')
@@ -415,45 +541,57 @@ class Command(BaseCommand):
             custom_fields_count = self._fetch_indicator(self.IND_CUSTOM_FIELDS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'ir.model.fields', 'search_count', args=[custom_fields_domain])
             indicators_data[self.IND_CUSTOM_FIELDS] = custom_fields_count if custom_fields_count is not None else 0
 
-            # Indicateur: Nombre de modèles personnalisés
-            custom_models_domain = [('model', '=like', 'x_%')]
-            custom_models_count = self._fetch_indicator(self.IND_CUSTOM_MODELS, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'ir.model', 'search_count', args=[custom_models_domain])
-            indicators_data[self.IND_CUSTOM_MODELS] = custom_models_count if custom_models_count is not None else 0
-
-            # Indicateur: Nombre d'utilisateurs inactifs depuis plus de 14 jours
-            date_14_days_ago_str = (timezone.now() - timedelta(days=14)).strftime('%Y-%m-%d %H:%M:%S')
-            inactive_users_domain = ['&', ('share', '=', False), ('active', '=', True), '|', ('login_date', '=', False), ('login_date', '<', date_14_days_ago_str)]
-            inactive_users_data = self._fetch_indicator(self.IND_INACTIVE_USERS_14D, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'res.users', 'search_read', args=[inactive_users_domain], kwargs={'fields': ['login']})
             
-            if inactive_users_data is not None:
-                count = len(inactive_users_data)
-                indicator_value = "0"
-                if count > 0:
-                    logins = ', '.join([user['login'] for user in inactive_users_data])
-                    indicator_value = f"{count} ({logins})"
-                indicators_data[self.IND_INACTIVE_USERS_14D] = indicator_value
-            else:
+            # --- INDICATEUR : Nombre d'utilisateurs inactifs > 14j (méthode login_date) ---
+            try:
+                self.stdout.write(f"     - Recherche '{self.IND_INACTIVE_USERS_14D}' (par date de connexion)...")
+                
+                date_14_days_ago = timezone.now() - timedelta(days=14)
+                date_14_days_ago_str = date_14_days_ago.strftime('%Y-%m-%d %H:%M:%S')
+                
+                inactive_users_domain = [
+                    ('share', '=', False), 
+                    ('active', '=', True), 
+                    '|', 
+                        ('login_date', '=', False), 
+                        ('login_date', '<', date_14_days_ago_str)
+                ]
+                
+                inactive_users_data = self._execute_odoo_kw(
+                    object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
+                    'res.users', 'search_read',
+                    args=[inactive_users_domain],
+                    kwargs={'fields': ['login']}
+                )
+                
+                if inactive_users_data is not None:
+                    external_inactive_users = [
+                        user for user in inactive_users_data
+                        if not (
+                            user.get('login', '').lower().endswith('@lpde.pro') or
+                            user.get('login', '').lower().endswith('@prelium.fr')
+                        )
+                    ]
+
+                    count = len(external_inactive_users)
+                    indicator_value = "0"
+                    if count > 0:
+                        logins = ', '.join([user['login'] for user in external_inactive_users[:5]])
+                        if count > 5:
+                            logins += f", et {count - 5} autre(s)..."
+                        indicator_value = f"{count} ({logins})"
+                    
+                    indicators_data[self.IND_INACTIVE_USERS_14D] = indicator_value
+                    self.stdout.write(self.style.SUCCESS(f"     - {self.IND_INACTIVE_USERS_14D}: OK ({indicator_value})"))
+                else:
+                    raise Exception("La requête Odoo a échoué (retour null)")
+
+            except Exception as e:
+                import traceback
+                self.stderr.write(self.style.ERROR(f"     - Erreur extraction '{self.IND_INACTIVE_USERS_14D}': {e}"))
+                self.stderr.write(self.style.ERROR(traceback.format_exc()))
                 indicators_data[self.IND_INACTIVE_USERS_14D] = "Erreur"
-
-            # Indicateur: Nombre de sociétés
-            company_count = self._fetch_indicator(self.IND_COMPANY_COUNT, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'res.company', 'search_count', args=[[]])
-            indicators_data[self.IND_COMPANY_COUNT] = company_count if company_count is not None else 0
-
-            # Indicateur: Date d'expiration
-            exp_date_str = self._fetch_indicator(self.IND_EXPIRATION_DATE, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'ir.config_parameter', 'get_param', args=['database.expiration_date'])
-            if exp_date_str and isinstance(exp_date_str, str):
-                try:
-                    dt_object = datetime.fromisoformat(exp_date_str.split(' ')[0])
-                    indicators_data[self.IND_EXPIRATION_DATE] = dt_object.strftime('%d/%m/%Y')
-                except (ValueError, TypeError):
-                    indicators_data[self.IND_EXPIRATION_DATE] = exp_date_str
-            else:
-                indicators_data[self.IND_EXPIRATION_DATE] = "Non trouvée"
-
-            # Indicateur: Code d'Abonnement (Database UUID)
-            sub_code = self._fetch_indicator(self.IND_SUBSCRIPTION_CODE, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'ir.config_parameter', 'get_param', args=['database.uuid'])
-            indicators_data[self.IND_SUBSCRIPTION_CODE] = sub_code if sub_code else "Non trouvé"
-
+            
             # Indicateur: Type d'hébergement (logique basée sur l'email de l'utilisateur API)
             try:
                 user_email = (client_conf.client_odoo_api_user or "").strip().lower()
@@ -552,7 +690,7 @@ class Command(BaseCommand):
             else:
                 base_type = "Standard"
             indicators_data[self.IND_BASE_TYPE] = base_type
-            self.stdout.write(self.style.SUCCESS(f"   - {self.IND_BASE_TYPE}: OK ({base_type})"))
+            self.stdout.write(self.style.SUCCESS(f"     - {self.IND_BASE_TYPE}: OK ({base_type})"))
 
             # 5. Sauvegarder les résultats en BDD
             saved_count, error_count = 0, 0
@@ -567,7 +705,7 @@ class Command(BaseCommand):
                         )
                         saved_count += 1
                     except Exception as e_save:
-                        self.stderr.write(self.style.ERROR(f"   - Erreur sauvegarde indicateur '{name}': {e_save}"))
+                        self.stderr.write(self.style.ERROR(f"     - Erreur sauvegarde indicateur '{name}': {e_save}"))
                         error_count += 1
             
             if error_count > 0:

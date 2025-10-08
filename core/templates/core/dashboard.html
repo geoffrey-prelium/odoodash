@@ -27,16 +27,16 @@
             text-transform: uppercase;
             font-size: 0.75rem; /* text-xs */
             border-bottom: 2px solid #e2e8f0; /* slate-200 */
-            position: sticky; /* Rend l'en-tête fixe lors du scroll vertical */
+            position: sticky;
             top: 0;
-            z-index: 10; /* Assure que l'en-tête passe au-dessus du contenu */
+            z-index: 10;
         }
         tbody td {
-            padding: 0.75rem 1rem; /* py-3 px-4 */
+            padding: 0.75rem 1rem;
             border-bottom-width: 1px;
             border-color: #e2e8f0; /* slate-200 */
             color: #334155; /* slate-700 */
-            vertical-align: middle; /* Aligne le contenu au milieu */
+            vertical-align: middle;
         }
         tbody tr:nth-child(even) {
             background-color: #ffffff; /* white */
@@ -48,25 +48,23 @@
             background-color: #eef2ff; /* indigo-50 */
         }
         
-        /* Style pour rendre la première colonne fixe lors du scroll horizontal */
+        /* Style pour rendre la première colonne fixe */
         .sticky-col {
             position: sticky;
             left: 0;
-            background-color: inherit; /* Hérite de la couleur de fond de la ligne */
+            background-color: inherit;
             z-index: 5;
             border-right: 1px solid #e2e8f0; /* slate-200 */
             min-width: 200px;
             white-space: nowrap;
         }
-
-        /* Assure que le th de la colonne sticky est au-dessus et a le même fond que les autres th */
         thead th.sticky-col {
-            background-color: #f1f5f9; /* Assurer la même couleur de fond que les autres th */
+            background-color: #f1f5f9;
             z-index: 15;
         }
         .table-container {
-            max-height: calc(100vh - 380px); /* Ajusté pour plus de filtres */
-            overflow: auto; /* Scroll vertical et horizontal pour la table */
+            max-height: 80vh; /* Ajusté pour la barre de recherche */
+            overflow: auto;
             border: 1px solid #e2e8f0; /* slate-200 */
             border-radius: 0.75rem; /* rounded-xl */
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); /* shadow-lg */
@@ -84,7 +82,7 @@
             color: #312e81; /* indigo-900 */
             text-decoration: underline;
         }
-        select:focus, button:focus { /* Amélioration du focus pour l'accessibilité */
+        select:focus, button:focus, input:focus {
             outline: 2px solid transparent;
             outline-offset: 2px;
             --tw-ring-color: #6366f1; /* indigo-500 */
@@ -104,8 +102,8 @@
             color: #be123c; /* rose-700 */
             text-decoration: underline;
         }
-
-        /* --- STYLES POUR ÉLARGIR LES COLONNES (VERSION ROBUSTE) --- */
+        
+        /* --- STYLES SPÉCIFIQUES --- */
         .col-code-abonnement { min-width: 280px; white-space: nowrap; }
         .col-nom-bdd { min-width: 250px; white-space: nowrap; }
         .col-collaborateur { min-width: 220px; white-space: nowrap; }
@@ -114,43 +112,54 @@
             white-space: normal;
             word-break: break-all;
         }
+        
+        /* --- STYLES POUR L'AUTOCOMPLÉTION --- */
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid #d1d5db; /* gray-300 */
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: white;
+            border-radius: 0 0 0.375rem 0.375rem; /* rounded-b-md */
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+        .autocomplete-items div {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+        }
+        .autocomplete-items div:hover {
+            background-color: #eef2ff; /* indigo-50 */
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
 
     <header class="mb-10">
         <div class="container mx-auto flex flex-wrap justify-between items-center py-4 px-2 md:px-0 border-b border-slate-200">
-            <!-- Groupe de Gauche: Logo et Titre -->
             <div class="flex items-center order-1">
                 <img src="https://i0.wp.com/franchise-optitmome.com/wp-content/uploads/2023/10/logo-pavillon-des-entrepreneurs.png?fit=507%2C370&ssl=1"
-                     alt="Logo Le Pavillon Des Entrepreneurs"
-                     class="h-12 md:h-14 mr-4"
+                     alt="Logo Le Pavillon Des Entrepreneurs" class="h-12 md:h-14 mr-4"
                      onerror="this.style.display='none'; this.onerror=null;">
                 <h1 class="text-3xl md:text-4xl font-bold text-slate-800">
                     Odoo<span class="text-indigo-600">Dash</span>
                 </h1>
             </div>
-
-            <!-- Groupe Central: Logos des partenaires (s'affiche au centre sur grand écran, en dessous sur petit) -->
             <div class="w-full lg:w-auto flex items-center justify-center order-3 lg:order-2 mt-4 lg:mt-0">
                  <img src="https://www.prelium.fr/web/image/website/7/logo/Prelium?unique=942dafa" alt="Logo Prelium" class="h-8 md:h-10 mx-5">
                  <img src="https://www.prelium.fr/web/image/123910-495664e7/horizon%20prelium-4.webp" alt="Horizon Prelium" class="h-8 md:h-10 mx-5">
             </div>
-
-            <!-- Groupe de Droite: Infos Utilisateur et Lien Admin -->
             <div class="flex items-center order-2 lg:order-3">
                 {% if user.is_authenticated %}
                     <div class="text-xs sm:text-sm text-slate-600 whitespace-nowrap flex items-center space-x-4">
-                        
-                        {# --- AJOUT DU LIEN ADMIN --- #}
-                        {% if user_profile.role == 'admin' %}
+                        {% if user_profile.role == 'admin' or user_profile.role == 'super_admin' %}
                             <a href="{% url 'admin:index' %}" target="_blank" 
                                class="font-medium text-indigo-600 hover:text-indigo-800 hover:underline transition-colors">
                                [Portail Admin]
                             </a>
                         {% endif %}
-                        {# --- FIN AJOUT --- #}
-
                         <div class="flex items-center space-x-2">
                             <span>Connecté : <strong class="text-slate-800">{{ user.username }}</strong></span>
                             {% if user_profile %}
@@ -175,9 +184,25 @@
             </div>
         {% endif %}
 
-        {# --- SECTION FILTRES --- #}
         <form method="GET" action="{% url 'core:dashboard' %}" class="bg-white p-4 md:p-6 rounded-xl border border-slate-200 shadow-sm mb-8">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+            
+            <div class="mb-4">
+                <label for="search" class="block text-sm font-medium text-slate-700">Rechercher un dossier :</label>
+                <div id="autocomplete-container" class="mt-1 relative rounded-md shadow-sm">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg class="h-5 w-5 text-slate-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <input type="search" name="search" id="search"
+                           class="focus:ring-indigo-500 focus:border-indigo-500 block w-full pl-10 sm:text-sm border-slate-300 rounded-md py-2"
+                           placeholder="Commencez à taper un nom de client..."
+                           value="{{ search_query|default:'' }}"
+                           autocomplete="off">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 items-end pt-4 border-t border-slate-200">
                 <div>
                     <label for="collaborator_filter" class="block text-sm font-medium text-slate-700 mb-1">Collaborateur :</label>
                     <select name="collaborator_filter" id="collaborator_filter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
@@ -201,9 +226,9 @@
                     </select>
                 </div>
                 <div>
-                    <label for="category_filter" class="block text-sm font-medium text-slate-700 mb-1">Catégorie Indicateur :</label>
+                    <label for="category_filter" class="block text-sm font-medium text-slate-700 mb-1">Catégorie :</label>
                     <select name="category_filter" id="category_filter" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-slate-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm">
-                        <option value="">Toutes les catégories</option>
+                        <option value="">Toutes</option>
                         {% for category_name in category_choices %}
                             <option value="{{ category_name }}" {% if category_name == selected_category %}selected{% endif %}>
                                 {{ category_name|title }}
@@ -211,6 +236,18 @@
                         {% endfor %}
                     </select>
                 </div>
+
+                {% if show_prelium_filter %}
+                <div class="flex items-center justify-start sm:pt-5">
+                    <input type="checkbox" name="prelium_filter" value="on" id="prelium_filter" 
+                           class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                           {% if prelium_filter_active %}checked{% endif %}>
+                    <label for="prelium_filter" class="ml-2 block text-sm font-medium text-gray-900">
+                        Prelium
+                    </label>
+                </div>
+                {% endif %}
+
                 <div class="sm:pt-5">
                     <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                         Appliquer
@@ -218,8 +255,6 @@
                 </div>
             </div>
         </form>
-        {# --- FIN SECTION FILTRES --- #}
-
 
         {% if clients_list %}
             <div class="flex justify-between items-center mb-4">
@@ -236,14 +271,10 @@
                 <table class="min-w-full bg-white">
                     <thead>
                         <tr>
-                            <th class="sticky-col">Client</th>
-                            
-                            {# Colonnes pour les indicateurs de données #}
+                            <th class="sticky-col text-left">Client</th>
                             {% for indicator_name in all_indicator_names %}
                                 <th class="max-w-32 text-center">{{ indicator_name|title }}</th>
                             {% endfor %}
-
-                            {# Colonnes "Divers" #}
                             {% if show_collaborator_column %}
                                 <th class="text-center">Collaborateur Assigné</th>
                             {% endif %}
@@ -262,8 +293,6 @@
                                                 {{ client.client_name }}
                                             </a>
                                         </td>
-                                        
-                                        {# Cellules pour les indicateurs de données #}
                                         {% for indicator_name in all_indicator_names %}
                                             <td class="indicator-value text-center">
                                                 {% with indicator=indicators_dict|get_item:indicator_name %}
@@ -271,20 +300,18 @@
                                                 {% endwith %}
                                             </td>
                                         {% endfor %}
-                                        
-                                        {# Cellules pour les colonnes "Divers" #}
                                         {% if indicators_for_this_client %}
                                             {% with first_indicator=indicators_for_this_client.0 %}
                                                 {% if show_collaborator_column %}
                                                     <td class="text-center">{{ first_indicator.assigned_collaborator_name|format_collab_name|default:"N/A" }}</td>
                                                 {% endif %}
                                                 {% if show_extraction_date_column %}
-                                                    <td class="whitespace-nowrap text-sm text-gray-500 text-center">{{ first_indicator.extraction_timestamp|date:"d/m/Y H:i"|default:"-" }}</td>
+                                                    <td class="whitespace-nowrap text-sm text-slate-500 text-center">{{ first_indicator.extraction_timestamp|date:"d/m/Y H:i"|default:"-" }}</td>
                                                 {% endif %}
                                             {% endwith %}
                                         {% else %}
-                                            {% if show_collaborator_column %}<td>-</td>{% endif %}
-                                            {% if show_extraction_date_column %}<td>-</td>{% endif %}
+                                            {% if show_collaborator_column %}<td class="text-center">-</td>{% endif %}
+                                            {% if show_extraction_date_column %}<td class="text-center">-</td>{% endif %}
                                         {% endif %}
                                     </tr>
                                 {% endwith %}
@@ -298,17 +325,17 @@
             <div class="bg-sky-50 border border-sky-200 text-sky-800 p-6 rounded-xl mt-6 shadow-sm">
                 <div class="flex">
                     <div class="py-1">
-                        <svg class="h-6 w-6 text-sky-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 10 14.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 11 18h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 12 21.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 13 24.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 14 27.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 15 30.5h.253a.25.25 0 0 1 .244.304l-.459 2.066a.75.75 0 1 0 1.408.438l.46-2.067a.25.25 0 0 1 .243-.304H17a1 1 0 1 1 0 2h-1.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H15a1 1 0 1 1 0-2h-.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722-.553l.46-2.067a.25.25 0 0 1 .243-.304H11a1 1 0 1 1 0-2H9.25a.75.75 0 0 0 0 1.5H9Z" clip-rule="evenodd" /></svg>
+                        <svg class="h-6 w-6 text-sky-500 mr-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Zm-7-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM9 9a.75.75 0 0 0 0 1.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 10 14.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 11 18h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 12 21.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 13 24.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 14 27.5h.253a.25.25 0 0 1 .244.304l-.459 2.066A.75.75 0 0 0 15 30.5h.253a.25.25 0 0 1 .244.304l-.459 2.066a.75.75 0 1 0 1.408.438l.46-2.067a.25.25 0 0 1 .243-.304H17a1 1 0 1 1 0 2h-1.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722.553l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722.553l.46-2.067a.25.25 0 0 1 .243-.304H15a1 1 0 1 1 0-2h-.382a.75.75 0 0 0-.722.553l-.46 2.067a1.75 1.75 0 1 1-3.284-1.018l.46-2.067a.25.25 0 0 1 .243-.304h.253a.75.75 0 0 0 .722.553l.46-2.067a.25.25 0 0 1 .243-.304H11a1 1 0 1 1 0-2H9.25a.75.75 0 0 0 0 1.5H9Z" clip-rule="evenodd" /></svg>
                     </div>
                     <div>
                         <p class="font-bold text-lg mb-1">Aucune Donnée à Afficher</p>
                         <p class="text-sm">
-                            {% if selected_closing_date or selected_collaborator_name or selected_category %}
-                                Aucun indicateur ne correspond à vos critères de filtre pour la dernière extraction.
+                            {% if selected_closing_date or selected_collaborator_name or selected_category or prelium_filter_active or search_query %}
+                                Aucun client ou indicateur ne correspond à vos critères de filtre.
                             {% elif user_role == 'collaborateur' %}
-                                Aucun indicateur n'a été trouvé pour les dossiers qui vous sont assignés pour la dernière extraction.
-                            {% elif user_role == 'admin' %}
-                                Aucun indicateur n'a encore été collecté. Veuillez vérifier la configuration et lancer le script d'extraction.
+                                Aucun indicateur n'a été trouvé pour les dossiers qui vous sont assignés.
+                            {% elif user_role == 'admin' or user_role == 'super_admin' %}
+                                Aucune donnée n'a encore été collectée. Veuillez lancer le script d'extraction.
                             {% else %}
                                 Aucun indicateur à afficher pour le moment.
                             {% endif %}
@@ -317,12 +344,67 @@
                 </div>
             </div>
         {% endif %}
-    </main>
+        </main>
 
     <footer class="text-center text-sm text-slate-500 mt-12 pb-4">
         OdooDash &copy; {% now "Y" %} - LPDE
     </footer>
 
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('search');
+        const container = document.getElementById('autocomplete-container');
+        let suggestionsWrapper = null;
+
+        searchInput.addEventListener('input', function() {
+            const term = this.value;
+
+            // Supprime les anciennes suggestions
+            if (suggestionsWrapper) {
+                suggestionsWrapper.remove();
+                suggestionsWrapper = null;
+            }
+
+            if (term.length < 2) {
+                return; // On ne lance la recherche qu'à partir de 2 caractères
+            }
+
+            // Appelle notre API Django
+            fetch(`{% url 'core:api-search-clients' %}?term=${encodeURIComponent(term)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        suggestionsWrapper = document.createElement('div');
+                        suggestionsWrapper.setAttribute('class', 'autocomplete-items');
+                        container.appendChild(suggestionsWrapper);
+
+                        data.forEach(item => {
+                            const suggestionDiv = document.createElement('div');
+                            suggestionDiv.innerHTML = `<strong>${item.substr(0, term.length)}</strong>${item.substr(term.length)}`;
+                            
+                            suggestionDiv.addEventListener('click', function() {
+                                searchInput.value = item; // Remplit la barre de recherche
+                                if (suggestionsWrapper) {
+                                    suggestionsWrapper.remove(); // Ferme la liste
+                                    suggestionsWrapper = null;
+                                }
+                                searchInput.form.submit(); // Soumet le formulaire
+                            });
+                            suggestionsWrapper.appendChild(suggestionDiv);
+                        });
+                    }
+                });
+        });
+
+        // Ferme la liste de suggestions si on clique ailleurs sur la page
+        document.addEventListener('click', function(e) {
+            if (e.target !== searchInput && suggestionsWrapper) {
+                suggestionsWrapper.remove();
+                suggestionsWrapper = null;
+            }
+        });
+    });
+    </script>
+
 </body>
 </html>
-

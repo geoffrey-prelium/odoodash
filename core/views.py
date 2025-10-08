@@ -9,7 +9,7 @@ import logging
 from django.core.management import call_command
 from django.contrib import messages
 from django.urls import reverse
-from django.http import HttpResponse, HttpResponseForbidden
+from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ INDICATOR_CATEGORIES = {
         'nb utilisateurs actifs', 'nb utilisateurs inactifs > 14j', 'nb utilisateurs lpde'
     ],
     'Technique': [
-        'nb modules actifs', 'date activation base', 'nb modeles personnalises (indicatif)',
+        'nb modules actifs', 'date activation base',
         'nb champs personnalises', 'erreurs serveur (24h)', 'nb actions automatisées',
         'emails en erreur (30j)'
     ],
@@ -59,6 +59,40 @@ INDICATOR_CATEGORIES = {
 
 
 @login_required
+def search_clients_autocomplete(request):
+    """
+    Cette vue est appelée par JavaScript.
+    Elle recherche les noms de clients qui correspondent au terme envoyé
+    et les retourne au format JSON.
+    """
+    term = request.GET.get('term', '').strip()
+    
+    # On ne fait rien si la recherche est trop courte
+    if len(term) < 2:
+        return JsonResponse([], safe=False)
+
+    # Base de la requête : on cherche les clients correspondant au terme
+    # "icontains" signifie "contient, insensible à la casse"
+    base_qs = ClientsOdoo.objects.filter(client_name__icontains=term)
+
+    # On s'assure que les collaborateurs ne voient que leurs propres clients
+    user = request.user
+    profile = getattr(user, 'profile', None)
+    if profile and profile.role == 'collaborateur' and profile.odoo_collaborator_id:
+        # On récupère d'abord les IDs des clients autorisés pour ce collaborateur
+        allowed_client_ids = IndicateursHistoriques.objects.filter(
+            assigned_odoo_collaborator_id=str(profile.odoo_collaborator_id)
+        ).values_list('client_id', flat=True).distinct()
+        
+        # On filtre notre recherche pour n'inclure que ces clients
+        base_qs = base_qs.filter(id__in=allowed_client_ids)
+
+    # On récupère les noms, en limitant à 10 résultats pour la performance
+    client_names = list(base_qs.values_list('client_name', flat=True).distinct().order_by('client_name')[:10])
+
+    return JsonResponse(client_names, safe=False)
+
+@login_required
 def dashboard_view(request):
     user = request.user
     profile = None
@@ -71,9 +105,12 @@ def dashboard_view(request):
     except UserProfile.DoesNotExist:
         logger.warning(f"Profil utilisateur non trouvé pour l'utilisateur {user.username}")
 
+    # Récupération des filtres depuis l'URL
     selected_closing_date = request.GET.get('closing_date_filter', '')
     selected_collaborator_name = request.GET.get('collaborator_filter', '')
     selected_category = request.GET.get('category_filter', '')
+    prelium_filter = request.GET.get('prelium_filter', '')
+    search_query = request.GET.get('search', '') # <-- AJOUT : Récupère le terme de recherche
 
     base_qs_for_filter_options = IndicateursHistoriques.objects.all()
     if user_role == 'collaborateur' and user_collab_id_str:
@@ -112,6 +149,7 @@ def dashboard_view(request):
             extraction_timestamp=latest_run_timestamp
         )
 
+        # Application des filtres
         if selected_collaborator_name:
             latest_indicators_qs = latest_indicators_qs.filter(
                 assigned_collaborator_name=selected_collaborator_name
@@ -122,42 +160,42 @@ def dashboard_view(request):
                 indicator_value=selected_closing_date
             ).values_list('client_id', flat=True).distinct()
             latest_indicators_qs = latest_indicators_qs.filter(client_id__in=clients_with_closing_date)
+        
+        if prelium_filter == 'on' and user_role == 'super_admin':
+            latest_indicators_qs = latest_indicators_qs.filter(client__is_prelium=True)
 
-        # On récupère tous les noms d'indicateurs potentiels de la BDD (sans tri)
+        # <-- AJOUT : Application du filtre de recherche par nom ---
+        if search_query:
+            latest_indicators_qs = latest_indicators_qs.filter(client__client_name__icontains=search_query)
+        # --- FIN DE L'AJOUT ---
+
         potential_indicator_names = list(set(
             name.strip().lower() for name in latest_indicators_qs.values_list('indicator_name', flat=True) if
             name and name.strip()
         ))
 
-        # --- LOGIQUE DE TRI PERSONNALISÉ DES COLONNES ---
         available_indicators_set = set(potential_indicator_names)
 
         if selected_category and selected_category in INDICATOR_CATEGORIES:
-            # On prend les indicateurs dans l'ordre défini dans la catégorie choisie
             category_indicator_names = INDICATOR_CATEGORIES[selected_category]
-            # On ne garde que ceux qui sont réellement disponibles dans les données actuelles
             all_indicator_names_for_columns = [
                 name for name in category_indicator_names if name in available_indicators_set
             ]
             show_collaborator_column = False
             show_extraction_date_column = False
         else:
-            # Pour "Toutes les catégories", on crée une liste complète en respectant l'ordre de chaque catégorie
             all_defined_indicators = []
             for category in INDICATOR_CATEGORIES.values():
                 all_defined_indicators.extend(category)
             
-            # On filtre cette liste ordonnée pour ne garder que les indicateurs disponibles
             all_indicator_names_for_columns = [
                 name for name in all_defined_indicators if name in available_indicators_set
             ]
             show_collaborator_column = True
             show_extraction_date_column = True
 
-        # La catégorie "Divers" n'affiche aucune colonne d'indicateur de données
         if selected_category == "Divers":
             all_indicator_names_for_columns = []
-        # --- FIN DE LA LOGIQUE DE TRI ---
 
         if all_indicator_names_for_columns or selected_category == "Divers":
             latest_indicators_qs = latest_indicators_qs.select_related('client').order_by('client__client_name', 'indicator_name')
@@ -191,6 +229,9 @@ def dashboard_view(request):
         'selected_category': selected_category,
         'show_collaborator_column': show_collaborator_column,
         'show_extraction_date_column': show_extraction_date_column,
+        'show_prelium_filter': user_role == 'super_admin',
+        'prelium_filter_active': prelium_filter == 'on',
+        'search_query': search_query, # <-- AJOUT : Passe la recherche au template
     }
     return render(request, 'core/dashboard.html', context)
 
