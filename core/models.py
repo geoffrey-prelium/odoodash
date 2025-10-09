@@ -68,6 +68,15 @@ class ClientsOdoo(models.Model):
         verbose_name="Filiale Prelium",
         help_text="Cocher si ce client fait partie de la filiale Prelium."
     )
+    
+    # --- CHAMP MANQUANT À AJOUTER ---
+    client_contact_email = models.EmailField(
+        max_length=254,
+        blank=True,
+        null=True,
+        verbose_name="E-mail du Contact Client (pour Looker Studio)",
+        help_text="L'adresse e-mail du client qui aura accès au dashboard Looker Studio."
+    )
 
     def __str__(self):
         return self.client_name
