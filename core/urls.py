@@ -17,5 +17,7 @@ urlpatterns = [
     # Cette URL sera appelée par notre JavaScript pour obtenir les suggestions
     path('api/search-clients/', views.search_clients_autocomplete, name='api-search-clients'),
 
+    path('portal/', views.client_portal_view, name='client_portal'),
+
 ]
 

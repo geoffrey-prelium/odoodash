@@ -248,52 +248,28 @@ class Command(BaseCommand):
                 indicators_data[self.IND_UNASSIGNED_TICKETS] = "N/A"
                 self.stdout.write(self.style.WARNING(f"     - {self.IND_UNASSIGNED_TICKETS}: Module Assistance non installé"))
 
-            # --- INDICATEUR : Code d'Abonnement (logique robuste) ---
+            # --- INDICATEUR : Code d'Abonnement (database.enterprise_code) ---
             try:
-                self.stdout.write(f"     - Recherche '{self.IND_SUBSCRIPTION_CODE}'...")
-                sub_code = "N/A" # Valeur par défaut
-
-                # 1. Vérifier si le modèle 'sale.subscription' existe
-                model_exists_count = self._execute_odoo_kw(
+                self.stdout.write(f"   - Recherche '{self.IND_SUBSCRIPTION_CODE}'...")
+                
+                # On appelle directement le paramètre système 'database.enterprise_code'
+                sub_code = self._execute_odoo_kw(
                     object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
-                    'ir.model', 'search_count', args=[[('model', '=', 'sale.subscription')]]
+                    'ir.config_parameter', 'get_param',
+                    args=['database.enterprise_code']
                 )
 
-                if model_exists_count == 0:
-                    self.stdout.write(self.style.WARNING(f"          - Module 'Abonnements' non installé pour ce client."))
-                    sub_code = "N/A (module absent)"
-                else:
-                    # 2. Si le module existe, rechercher l'abonnement
-                    company_data = self._execute_odoo_kw(
-                        object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
-                        'res.company', 'read', args=[[company_id]], kwargs={'fields': ['partner_id']}
-                    )
-                    if company_data and company_data[0].get('partner_id'):
-                        company_partner_id = company_data[0]['partner_id'][0]
-                        
-                        subscription_domain = [
-                            ('partner_id', '=', company_partner_id),
-                        ]
-                        subscriptions = self._execute_odoo_kw(
-                            object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key,
-                            'sale.subscription', 'search_read',
-                            args=[subscription_domain],
-                            kwargs={'fields': ['name'], 'limit': 1, 'order': 'create_date desc'}
-                        )
-                        
-                        if subscriptions:
-                            sub_code = subscriptions[0]['name']
-                        else:
-                            sub_code = "Aucun abonnement actif"
-                    else:
-                        sub_code = "Partenaire société introuvable"
+                # Si le paramètre n'existe pas, Odoo renvoie 'False'. On le formate.
+                if not sub_code:
+                    sub_code = "Non défini"
 
                 indicators_data[self.IND_SUBSCRIPTION_CODE] = sub_code
-                self.stdout.write(self.style.SUCCESS(f"     - {self.IND_SUBSCRIPTION_CODE}: OK ({sub_code})"))
+                self.stdout.write(self.style.SUCCESS(f"   - {self.IND_SUBSCRIPTION_CODE}: OK ({sub_code})"))
 
             except Exception as e:
-                self.stderr.write(self.style.ERROR(f"     - Erreur extraction '{self.IND_SUBSCRIPTION_CODE}': {e}"))
-                indicators_data[self.IND_SUBSCRIPTION_CODE] = "Erreur" # On stocke "Erreur" au lieu de None
+                self.stderr.write(self.style.ERROR(f"   - Erreur extraction '{self.IND_SUBSCRIPTION_CODE}': {e}"))
+                indicators_data[self.IND_SUBSCRIPTION_CODE] = "Erreur"
+            # --- FIN DE L'INDICATEUR ---
 
             # Indicateur: Nombre de transactions bancaires à rapprocher
             bank_reconcile_domain = [('is_reconciled', '=', False)]

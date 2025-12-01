@@ -24,11 +24,12 @@ class UserProfileInline(admin.StackedInline):
         odoo_collaborator_id = forms.ChoiceField(
             label="Collaborateur Odoo Cabinet (Partenaire)",
             required=False,
-            help_text="Sélectionnez le partenaire correspondant dans l'Odoo du cabinet."
+            help_text="Pour les COMPTABLES : Sélectionnez le partenaire correspondant."
         )
+        
         class Meta:
             model = UserProfile
-            fields = ('role', 'odoo_collaborator_id')
+            fields = ('role', 'odoo_collaborator_id', 'client_odoo_link')
 
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -128,7 +129,7 @@ class ClientsOdooAdmin(admin.ModelAdmin):
                 'client_odoo_db', 
                 'client_odoo_api_user', 
                 'is_prelium',
-                'client_contact_email' # <-- AJOUT
+                'client_contact_email' # <-- Champ pour Looker Studio
             )
         }),
         ('Gestion de la Clé API', {
@@ -166,9 +167,9 @@ class IndicateursHistoriquesAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return False
     def has_change_permission(self, request, obj=None):
-        return False # Mettre à True si vous voulez permettre l'édition, mais non recommandé
+        return False 
     def has_delete_permission(self, request, obj=None):
-        return True # Permet de nettoyer des données si besoin
+        return True 
 
 
 # --- Statuts Connexion Clients Odoo (Supervision) ---

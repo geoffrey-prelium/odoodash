@@ -5,6 +5,7 @@ from django.db.models import Max, Q
 from .models import IndicateursHistoriques, UserProfile, ClientsOdoo
 from collections import defaultdict
 import logging
+import json  # <--- AJOUTÉ : Nécessaire pour client_portal_view
 
 from django.core.management import call_command
 from django.contrib import messages
@@ -72,7 +73,6 @@ def search_clients_autocomplete(request):
         return JsonResponse([], safe=False)
 
     # Base de la requête : on cherche les clients correspondant au terme
-    # "icontains" signifie "contient, insensible à la casse"
     base_qs = ClientsOdoo.objects.filter(client_name__icontains=term)
 
     # On s'assure que les collaborateurs ne voient que leurs propres clients
@@ -110,7 +110,7 @@ def dashboard_view(request):
     selected_collaborator_name = request.GET.get('collaborator_filter', '')
     selected_category = request.GET.get('category_filter', '')
     prelium_filter = request.GET.get('prelium_filter', '')
-    search_query = request.GET.get('search', '') # <-- AJOUT : Récupère le terme de recherche
+    search_query = request.GET.get('search', '')
 
     base_qs_for_filter_options = IndicateursHistoriques.objects.all()
     if user_role == 'collaborateur' and user_collab_id_str:
@@ -131,11 +131,13 @@ def dashboard_view(request):
 
     category_choices_display = list(INDICATOR_CATEGORIES.keys())
 
+    # --- INITIALISATION DES VARIABLES (CORRECTION UnboundLocalError) ---
+    # On initialise tout ici pour être sûr que les variables existent même si latest_run_timestamp est None
     latest_indicators_qs = IndicateursHistoriques.objects.none()
     latest_run_timestamp = None
     clients_list = []
     client_indicators_dict = {}
-
+    all_indicator_names_for_columns = []
     show_collaborator_column = False
     show_extraction_date_column = False
 
@@ -164,10 +166,9 @@ def dashboard_view(request):
         if prelium_filter == 'on' and user_role == 'super_admin':
             latest_indicators_qs = latest_indicators_qs.filter(client__is_prelium=True)
 
-        # <-- AJOUT : Application du filtre de recherche par nom ---
+        # Filtre de recherche par nom
         if search_query:
             latest_indicators_qs = latest_indicators_qs.filter(client__client_name__icontains=search_query)
-        # --- FIN DE L'AJOUT ---
 
         potential_indicator_names = list(set(
             name.strip().lower() for name in latest_indicators_qs.values_list('indicator_name', flat=True) if
@@ -231,7 +232,7 @@ def dashboard_view(request):
         'show_extraction_date_column': show_extraction_date_column,
         'show_prelium_filter': user_role == 'super_admin',
         'prelium_filter_active': prelium_filter == 'on',
-        'search_query': search_query, # <-- AJOUT : Passe la recherche au template
+        'search_query': search_query,
     }
     return render(request, 'core/dashboard.html', context)
 
@@ -270,3 +271,48 @@ def scheduler_fetch_indicators_view(request):
             return HttpResponse(f"Erreur lors du lancement de l'extraction : {e}", status=500)
     
     return HttpResponse("Cette URL ne peut être appelée qu'avec la méthode POST.", status=405)
+
+@login_required
+def client_portal_view(request):
+    user = request.user
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        return render(request, 'core/error.html', {'message': "Profil non trouvé."})
+
+    # 1. SÉCURITÉ : Vérifier que c'est bien un client et qu'il a un dossier
+    if profile.role != 'client' or not profile.client_odoo_link:
+        # Si c'est un collaborateur qui essaie d'accéder, on le renvoie au dashboard interne
+        return redirect('core:dashboard')
+
+    client_obj = profile.client_odoo_link
+
+    # 2. RÉCUPÉRER LES DERNIÈRES DONNÉES (Pour les cartes "Chiffres Clés")
+    latest_run = IndicateursHistoriques.objects.filter(client=client_obj).aggregate(Max('extraction_timestamp'))['extraction_timestamp__max']
+    
+    latest_indicators = {}
+    if latest_run:
+        qs_latest = IndicateursHistoriques.objects.filter(client=client_obj, extraction_timestamp=latest_run)
+        for ind in qs_latest:
+            latest_indicators[ind.indicator_name] = ind.indicator_value
+
+    # 3. PRÉPARER LES DONNÉES POUR LES GRAPHIQUES (Historique)
+    # Exemple : Évolution des utilisateurs actifs
+    history_qs = IndicateursHistoriques.objects.filter(
+        client=client_obj, 
+        indicator_name='nb utilisateurs actifs'
+    ).order_by('extraction_timestamp')
+
+    # On prépare deux listes : Dates et Valeurs
+    dates = [d.strftime('%d/%m') for d in history_qs.values_list('extraction_timestamp', flat=True)]
+    values_users = [int(v) if v.isdigit() else 0 for v in history_qs.values_list('indicator_value', flat=True)]
+
+    # On passe tout ça au template
+    context = {
+        'client': client_obj,
+        'kpis': latest_indicators,
+        'chart_dates': json.dumps(dates), # Convertir en JSON pour le JavaScript
+        'chart_users': json.dumps(values_users),
+        'page_title': f"Mon Espace - {client_obj.client_name}",
+    }
+    return render(request, 'core/client_portal.html', context)

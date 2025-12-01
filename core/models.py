@@ -16,6 +16,7 @@ class UserProfile(models.Model):
         ('admin', 'Administrateur'),
         ('collaborateur', 'Collaborateur'),
         ('super_admin', 'Super Administrateur'),
+        ('client', 'Client (Vue Dossier)'),
     ]
     role = models.CharField(
         max_length=20,
@@ -29,6 +30,15 @@ class UserProfile(models.Model):
         null=True,
         blank=True,
         verbose_name="ID Partenaire Odoo du Collaborateur"
+    )
+    # Permet de lier un utilisateur Django directement à une fiche Client Odoo
+    client_odoo_link = models.ForeignKey(
+        'ClientsOdoo',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Dossier Client Associé",
+        help_text="Uniquement pour le rôle 'Client'. Définit quel dossier cet utilisateur peut voir."
     )
 
     def __str__(self):
