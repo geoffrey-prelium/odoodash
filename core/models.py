@@ -157,3 +157,25 @@ class ClientOdooStatus(models.Model):
         verbose_name_plural = "Statuts Connexion Clients Odoo"
         ordering = ['-last_connection_attempt']
 # --- FIN NOUVEAU MODÈLE ---
+
+class ClientPreference(models.Model):
+    user = models.OneToOneField(
+        'UserProfile', 
+        on_delete=models.CASCADE, 
+        related_name='preferences',
+        verbose_name="Utilisateur"
+    )
+    # On stocke la liste des indicateurs visibles sous forme de JSON (liste de chaînes)
+    visible_indicators = models.JSONField(
+        default=list, 
+        verbose_name="Indicateurs Visibles"
+    )
+    # On peut aussi stocker la période par défaut si on veut
+    default_period = models.IntegerField(default=30, verbose_name="Période par défaut (jours)")
+
+    def __str__(self):
+        return f"Préférences de {self.user}"
+
+    class Meta:
+        verbose_name = "Préférence Client"
+        verbose_name_plural = "Préférences Clients"

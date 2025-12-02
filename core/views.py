@@ -13,6 +13,20 @@ from django.urls import reverse
 from django.http import HttpResponse, HttpResponseForbidden, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
+from django.contrib.auth.views import LoginView
+from django.urls import reverse_lazy
+
+import json
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.db.models import Max
+from .models import IndicateursHistoriques, UserProfile
+from .models import ClientPreference
+from datetime import timedelta
+from django.views.decorators.http import require_POST
+
+# from .views import INDICATOR_CATEGORIES
+
 logger = logging.getLogger(__name__)
 
 # --- DÉFINITION DES CATÉGORIES D'INDICATEURS (RÉORGANISÉES) ---
@@ -272,6 +286,17 @@ def scheduler_fetch_indicators_view(request):
     
     return HttpResponse("Cette URL ne peut être appelée qu'avec la méthode POST.", status=405)
 
+# Fonction utilitaire pour nettoyer les valeurs numériques (ex: "1 200,50 €" -> 1200.50)
+def clean_numeric_value(value):
+    if not value:
+        return 0
+    try:
+        # On garde chiffres, points et signes moins. On vire les virgules et espaces.
+        clean_str = str(value).replace(',', '').replace(' ', '').replace('€', '').strip()
+        return float(clean_str)
+    except ValueError:
+        return 0
+
 @login_required
 def client_portal_view(request):
     user = request.user
@@ -280,39 +305,138 @@ def client_portal_view(request):
     except UserProfile.DoesNotExist:
         return render(request, 'core/error.html', {'message': "Profil non trouvé."})
 
-    # 1. SÉCURITÉ : Vérifier que c'est bien un client et qu'il a un dossier
     if profile.role != 'client' or not profile.client_odoo_link:
-        # Si c'est un collaborateur qui essaie d'accéder, on le renvoie au dashboard interne
         return redirect('core:dashboard')
 
     client_obj = profile.client_odoo_link
 
-    # 2. RÉCUPÉRER LES DERNIÈRES DONNÉES (Pour les cartes "Chiffres Clés")
-    latest_run = IndicateursHistoriques.objects.filter(client=client_obj).aggregate(Max('extraction_timestamp'))['extraction_timestamp__max']
+    # --- GESTION DE LA PÉRIODE ---
+    # On récupère le paramètre GET 'days' (défaut: 30 jours)
+    try:
+        days_range = int(request.GET.get('days', 30))
+    except ValueError:
+        days_range = 30
     
+    # Date limite pour les graphiques
+    date_threshold = timezone.now() - timedelta(days=days_range)
+
+    # --- GESTION DES PRÉFÉRENCES ---
+    # Liste de TOUS les graphiques possibles (Nom technique : Titre affiché)
+    ALL_AVAILABLE_CHARTS = {
+        'nb utilisateurs actifs': 'Utilisateurs Actifs',
+        'operations à qualifier': 'Opérations à Qualifier',
+        'nombre de commandes à facturer': 'Commandes à Facturer',
+        'resultat provisoire annee courante': 'Résultat Provisoire',
+        'nombre de factures en retard': 'Factures en Retard',
+        'opportunités créées (30j)': 'Opportunités Commerciales'
+    }
+
+    # Récupérer les préférences de l'utilisateur
+    try:
+        user_pref = ClientPreference.objects.get(user=profile)
+        selected_indicators = user_pref.visible_indicators
+        # Si la liste est vide (premier passage), on met tout par défaut
+        if not selected_indicators:
+            selected_indicators = list(ALL_AVAILABLE_CHARTS.keys())
+    except ClientPreference.DoesNotExist:
+        # Pas de préférences ? On montre tout par défaut
+        selected_indicators = list(ALL_AVAILABLE_CHARTS.keys())
+
+    # 1. RÉCUPÉRER LES DERNIÈRES DONNÉES (KPIs - Toujours affichés)
+    latest_run = IndicateursHistoriques.objects.filter(client=client_obj).aggregate(Max('extraction_timestamp'))['extraction_timestamp__max']
     latest_indicators = {}
     if latest_run:
         qs_latest = IndicateursHistoriques.objects.filter(client=client_obj, extraction_timestamp=latest_run)
         for ind in qs_latest:
             latest_indicators[ind.indicator_name] = ind.indicator_value
 
-    # 3. PRÉPARER LES DONNÉES POUR LES GRAPHIQUES (Historique)
-    # Exemple : Évolution des utilisateurs actifs
-    history_qs = IndicateursHistoriques.objects.filter(
+    # 2. PRÉPARER LES DONNÉES GRAPHIQUES (Filtrées par période et préférences)
+    charts_data = {}
+    
+    # On détermine d'abord les dates communes basées sur la période choisie
+    # On prend un indicateur stable pour définir l'axe X
+    base_qs = IndicateursHistoriques.objects.filter(
         client=client_obj, 
-        indicator_name='nb utilisateurs actifs'
+        indicator_name='nb utilisateurs actifs',
+        extraction_timestamp__gte=date_threshold # <-- Filtre de date
     ).order_by('extraction_timestamp')
+    
+    dates = [d.strftime('%d/%m') for d in base_qs.values_list('extraction_timestamp', flat=True)]
 
-    # On prépare deux listes : Dates et Valeurs
-    dates = [d.strftime('%d/%m') for d in history_qs.values_list('extraction_timestamp', flat=True)]
-    values_users = [int(v) if v.isdigit() else 0 for v in history_qs.values_list('indicator_value', flat=True)]
+    # On ne génère les données QUE pour les indicateurs choisis par l'utilisateur
+    for indicator in selected_indicators:
+        if indicator in ALL_AVAILABLE_CHARTS: # Sécurité
+            qs = IndicateursHistoriques.objects.filter(
+                client=client_obj, 
+                indicator_name=indicator,
+                extraction_timestamp__gte=date_threshold
+            ).order_by('extraction_timestamp')
+            
+            values = [clean_numeric_value(v) for v in qs.values_list('indicator_value', flat=True)]
+            charts_data[indicator] = json.dumps(values)
 
-    # On passe tout ça au template
     context = {
         'client': client_obj,
         'kpis': latest_indicators,
-        'chart_dates': json.dumps(dates), # Convertir en JSON pour le JavaScript
-        'chart_users': json.dumps(values_users),
+        'latest_run_date': latest_run,
+        'chart_dates': json.dumps(dates),
+        'charts_data': charts_data,
+        'categories': INDICATOR_CATEGORIES,
         'page_title': f"Mon Espace - {client_obj.client_name}",
+        
+        # Nouvelles variables pour le template
+        'current_days': days_range,
+        'available_charts': ALL_AVAILABLE_CHARTS, # Pour le menu de config
+        'selected_charts': selected_indicators,   # Pour cocher les cases
     }
     return render(request, 'core/client_portal.html', context)
+
+@login_required
+def dispatch_login_view(request):
+    user = request.user
+    print(f"--> PASSAGE DANS DISPATCH pour : {user.username}")  # <--- LOG IMPORTANT
+    try:
+        profile = user.profile
+        print(f"--> Rôle détecté : {profile.role}") # <--- LOG IMPORTANT
+        
+        if profile.role == 'client':
+            print("--> Décision : Redirection PORTAIL")
+            return redirect('core:client_portal')
+        else:
+            print("--> Décision : Redirection DASHBOARD")
+            return redirect('core:dashboard')
+    except UserProfile.DoesNotExist:
+        print("--> ERREUR : Pas de profil")
+        return redirect('core:dashboard')
+    
+class CustomLoginView(LoginView):
+    def get_success_url(self):
+        user = self.request.user
+        
+        # 1. Logique Prioritaire pour les Clients
+        try:
+            if hasattr(user, 'profile') and user.profile.role == 'client':
+                print(f"DEBUG: Login Client détecté ({user.username}) -> Force Portail")
+                return reverse_lazy('core:client_portal')
+        except Exception as e:
+            print(f"DEBUG: Erreur profil au login: {e}")
+
+        # 2. Logique Standard pour les autres (Admin/Collaborateurs)
+        # Cela respectera le ?next= s'il existe, ou ira vers LOGIN_REDIRECT_URL
+        return super().get_success_url()
+    
+@login_required
+@require_POST
+def save_client_preferences(request):
+    try:
+        data = json.loads(request.body)
+        indicators = data.get('indicators', [])
+
+        # On récupère ou crée l'objet de préférence
+        pref, created = ClientPreference.objects.get_or_create(user=request.user.profile)
+        pref.visible_indicators = indicators
+        pref.save()
+
+        return JsonResponse({'status': 'ok'})
+    except Exception as e:
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=400)

@@ -18,6 +18,10 @@ urlpatterns = [
     path('api/search-clients/', views.search_clients_autocomplete, name='api-search-clients'),
 
     path('portal/', views.client_portal_view, name='client_portal'),
+    
+    path('dispatch/', views.dispatch_login_view, name='dispatch_login'),
+
+    path('api/save-preferences/', views.save_client_preferences, name='save_preferences'),
 
 ]
 

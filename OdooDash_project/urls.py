@@ -3,20 +3,16 @@ from django.contrib import admin
 # Assurez-vous que 'include' est bien importé
 from django.urls import path, include
 from django.views.generic import RedirectView
+from core.views import CustomLoginView
 
 urlpatterns = [
-    # URL pour l'interface d'administration Django
+    # --- MODIFICATION ICI ---
+    # On place votre vue personnalisée AVANT les 'auth.urls' pour qu'elle prenne le dessus
+    path('accounts/login/', CustomLoginView.as_view(), name='login'),
+    
+    # Les URLs standards (pour logout, password reset, etc.)
+    path('accounts/', include('django.contrib.auth.urls')),
+    
     path('admin/', admin.site.urls),
-
-    # Accessibles via /app/dashboard/, etc.
     path('app/', include('core.urls', namespace='core')),
-
-    # Inclut les URLs d'authentification standard de Django
-    # Fournit /accounts/login/, /accounts/logout/, etc.
-    path('accounts/', include('django.contrib.auth.urls')),
-
-    # Redirige la racine du site vers le tableau de bord
-    path('', RedirectView.as_view(pattern_name='core:dashboard', permanent=False), name='home'),
-    path('accounts/', include('django.contrib.auth.urls')),
-
 ]

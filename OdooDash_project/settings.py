@@ -165,7 +165,14 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # --- Paramètres d'Authentification ---
-LOGIN_REDIRECT_URL = '/app/dashboard/'
+# LOGIN_REDIRECT_URL = '/app/dashboard/'
 LOGIN_URL = '/accounts/login/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/app/dispatch/'
 
+# ... fin du fichier settings.py ...
+
+# --- DEBUG REDIRECTION ---
+print("="*50)
+print(f"DEBUG: LOGIN_REDIRECT_URL est configuré sur : {LOGIN_REDIRECT_URL}")
+print("="*50)
