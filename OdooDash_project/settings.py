@@ -75,13 +75,22 @@ if IS_PRODUCTION:
     # Autorise toutes les URLs se terminant par .run.app, ce qui est la méthode
     # recommandée et la plus robuste pour Cloud Run.
     ALLOWED_HOSTS.append('.run.app')
+    ALLOWED_HOSTS.append('odoodash.prelium.fr')
     # Pour la protection CSRF, on autorise toutes les URLs sécurisées de Cloud Run.
     CSRF_TRUSTED_ORIGINS.append('https://*.run.app')
+    CSRF_TRUSTED_ORIGINS.append('https://odoodash.prelium.fr')
     
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    
+    # --- AJOUTS POUR LA COMPATIBILITÉ AVEC FIREBASE HOSTING / IFRAME ---
+    # Firebase Hosting supprime tous les cookies sauf '__session'
+    SESSION_COOKIE_NAME = '__session'
+    # Autoriser l'utilisation des cookies dans un contexte inter-sites (ex: iframes)
+    SESSION_COOKIE_SAMESITE = 'None'
+    CSRF_COOKIE_SAMESITE = 'None'
 else:
     ALLOWED_HOSTS.extend(['localhost', '127.0.0.1'])
 
@@ -171,6 +180,15 @@ LOGOUT_REDIRECT_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/dispatch/'
 
 # ... fin du fichier settings.py ...
+
+# --- Configuration Email (SMTP) ---
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'geoffrey.lpde@gmail.com')
 
 # --- DEBUG REDIRECTION ---
 print("="*50)

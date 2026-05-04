@@ -6,7 +6,8 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 
 # Importez vos modèles
-from .models import UserProfile, ConfigurationCabinet, ClientsOdoo, IndicateursHistoriques, ClientOdooStatus
+from .models import UserProfile, ConfigurationCabinet, ClientsOdoo, IndicateursHistoriques, ClientOdooStatus, ClientPreference, AlerteIndicateur
+
 # Importez les fonctions utilitaires
 from .utils import encrypt_value, get_odoo_cabinet_collaborators
 
@@ -197,3 +198,44 @@ class ClientOdooStatusAdmin(admin.ModelAdmin):
         return False
     def has_change_permission(self, request, obj=None):
         return False
+    
+@admin.register(ClientPreference)
+class ClientPreferenceAdmin(admin.ModelAdmin):
+    list_display = ('user', 'default_period', 'visible_indicators')
+
+
+# --- Alertes Indicateurs ---
+
+@admin.register(AlerteIndicateur)
+class AlerteIndicateurAdmin(admin.ModelAdmin):
+
+    class AlerteIndicateurForm(forms.ModelForm):
+        indicator_name = forms.ChoiceField(
+            label="Indicateur",
+            help_text="Sélectionnez l'indicateur à surveiller (seuls les indicateurs numériques sont pertinents)."
+        )
+
+        class Meta:
+            model = AlerteIndicateur
+            fields = '__all__'
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # Construire les choix d'indicateurs à partir de INDICATOR_CATEGORIES
+            from core.views import INDICATOR_CATEGORIES
+            choices = [('', '---------')]
+            for category, indicators in INDICATOR_CATEGORIES.items():
+                for indicator in indicators:
+                    choices.append((indicator, f"{indicator} ({category})"))
+            self.fields['indicator_name'].choices = choices
+
+    form = AlerteIndicateurForm
+    list_display = ('client', 'indicator_name', 'get_comparator_display', 'threshold', 'collaborator_email', 'is_active', 'last_alert_sent')
+    list_filter = ('is_active', 'client__client_name', 'comparator')
+    search_fields = ('client__client_name', 'indicator_name', 'collaborator_email')
+    list_per_page = 25
+    readonly_fields = ('last_alert_sent',)
+
+    @admin.display(description='Comparatif')
+    def get_comparator_display(self, obj):
+        return obj.get_comparator_display()

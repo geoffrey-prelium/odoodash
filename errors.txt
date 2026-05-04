@@ -1,0 +1,41 @@
+Traceback (most recent call last):
+  File "/app/core/management/commands/fetch_indicators.py", line 98, in _fetch_indicator
+    result = func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^
+  File "/app/core/management/commands/fetch_indicators.py", line 89, in _execute_odoo_kw
+    return object_proxy.execute_kw(db, uid, api_key, model, method, args, kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1122, in __call__
+    return self.__send(self.__name, args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1464, in __request
+    response = self.__transport.request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1166, in request
+    return self.single_request(host, handler, request_body, verbose)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1182, in single_request
+    return self.parse_response(resp)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1354, in parse_response
+    return u.close()
+           ^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 668, in close
+    raise Fault(**self._stack[0])
+xmlrpc.client.Fault: <Fault 1: 'Traceback (most recent call last):\n  File "/home/odoo/src/odoo/odoo/addons/base/controllers/rpc.py", line 165, in xmlrpc_2\n    response = self._xmlrpc(service)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/addons/base/controllers/rpc.py", line 139, in _xmlrpc\n    result = dispatch_rpc(service, method, params)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/http.py", line 412, in dispatch_rpc\n    return dispatch(method, params)\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/service/model.py", line 59, in dispatch\n    res = execute_kw(db, uid, *params[3:])\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/service/model.py", line 82, in execute_kw\n    return execute(db, uid, obj, method, *args, **kw or {})\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/service/model.py", line 88, in execute\n    res = execute_cr(cr, uid, obj, method, *args, **kw)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/service/model.py", line 73, in execute_cr\n    result = retrying(partial(odoo.api.call_kw, recs, method, args, kw), env)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/service/model.py", line 157, in retrying\n    result = func()\n             ^^^^^^\n  File "/home/odoo/src/odoo/odoo/api.py", line 535, in call_kw\n    result = getattr(recs, name)(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/models.py", line 1731, in search_count\n    query = self._search(domain, limit=limit)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/enterprise/helpdesk/models/helpdesk_ticket.py", line 68, in _search\n    return super()._search(domain, offset, limit, order)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/models.py", line 5818, in _search\n    query = self._where_calc(domain)\n            ^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/models.py", line 5569, in _where_calc\n    return expression.expression(domain, self).query\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/osv/expression.py", line 793, in __init__\n    self.expression = domain_combine_anies(domain, model)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/osv/expression.py", line 611, in domain_combine_anies\n    domain_any = _anyfy_leaves(domain, model)\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/osv/expression.py", line 390, in _anyfy_leaves\n    result.append((path[0], \'any\', _anyfy_leaves(subdomain, comodel)))\n                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/home/odoo/src/odoo/odoo/osv/expression.py", line 386, in _anyfy_leaves\n    raise ValueError(f"Invalid field {model._name}.{path[0]} in leaf {item}")\nValueError: Invalid field helpdesk.stage.is_closed in leaf (\'is_closed\', \'=\', False)\n'>
+Traceback (most recent call last):
+  File "/app/core/utils.py", line 23, in connect_odoo
+    version_info_dict = common_proxy.version()
+                        ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1122, in __call__
+    return self.__send(self.__name, args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1464, in __request
+    response = self.__transport.request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1166, in request
+    return self.single_request(host, handler, request_body, verbose)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.11/xmlrpc/client.py", line 1196, in single_request
+    raise ProtocolError(
+xmlrpc.client.ProtocolError: <ProtocolError for 4d-pioneers.odoo.com/xmlrpc/2/common: 303 See Other>

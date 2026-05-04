@@ -49,3 +49,14 @@ def format_collab_name(value):
             return parts[1].strip() # Prend la partie après la virgule et enlève les espaces
     return value # Retourne la valeur originale si pas de virgule ou si ce n'est pas une chaîne
 # --- FIN NOUVEAU FILTRE ---
+
+# --- FILTRES POUR LES ALERTES INDICATEURS ---
+@register.filter(name='make_alert_key')
+def make_alert_key(client, indicator_name):
+    """Construit une clé 'client_pk|indicator_name' pour vérifier les alertes."""
+    return f"{client.pk}|{indicator_name}"
+
+@register.filter(name='in_set')
+def in_set(value, the_set):
+    """Vérifie si une valeur est dans un ensemble."""
+    return value in the_set

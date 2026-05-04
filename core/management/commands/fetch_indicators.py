@@ -161,20 +161,28 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING("Aucun client Odoo n'est configuré."))
             return
 
-        self.stdout.write(f"Traitement de {clients_config.count()} client(s) Odoo...")
+        self.stdout.write(f"Traitement de {clients_config.count()} client(s) Odoo en parallèle (5 threads)...")
         current_extraction_run_timestamp = timezone.now()
 
-        for client_conf in clients_config:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        import threading
+
+        # Compteurs thread-safe
+        lock = threading.Lock()
+        results = {'success': 0, 'error': 0}
+
+        def process_client(client_conf):
+            """Traite un client dans un thread séparé."""
             self.stdout.write(self.style.NOTICE(f"\n--- Traitement du client : {client_conf.client_name} ---"))
             indicators_data = {}
             last_attempt_time = timezone.now()
-            
+        
             client_api_key = decrypt_value(client_conf.client_odoo_encrypted_api_key)
             if not client_api_key:
                 error_msg = "Impossible de déchiffrer la clé API."
                 self.stderr.write(self.style.ERROR(f"{error_msg} pour {client_conf.client_name}."))
                 ClientOdooStatus.objects.update_or_create(client=client_conf, defaults={'last_connection_attempt': last_attempt_time, 'connection_successful': False, 'last_error_message': error_msg})
-                continue
+                return
             
             uid_client, _, object_proxy_client, odoo_version, conn_error = connect_odoo(
                 client_conf.client_odoo_url, client_conf.client_odoo_db,
@@ -193,11 +201,10 @@ class Command(BaseCommand):
 
             if not uid_client:
                 self.stderr.write(self.style.ERROR(f">>> Échec authentification Odoo pour {client_conf.client_name}. {conn_error}"))
-                # Sauvegarder les quelques indicateurs qu'on a pu récupérer
                 for name, value in indicators_data.items():
                     IndicateursHistoriques.objects.create(client=client_conf, indicator_name=name, indicator_value=str(value), extraction_timestamp=current_extraction_run_timestamp, assigned_odoo_collaborator_id="0", assigned_collaborator_name="N/A")
-                continue
-            
+                return
+
             self.stdout.write(self.style.SUCCESS(f"Connecté avec succès à Odoo pour {client_conf.client_name} (UID: {uid_client})."))
             
             # --- DÉTERMINATION DES BONS NOMS DE CHAMPS ---
@@ -210,14 +217,14 @@ class Command(BaseCommand):
                 partner_ids = self._fetch_indicator("Recherche Partenaire", self._execute_odoo_kw, firm_object_proxy, config_cabinet.firm_odoo_db, firm_uid, firm_api_key, 'res.partner', 'search', args=[partner_domain], kwargs={'limit': 1})
                 if partner_ids:
                     partner_data = self._fetch_indicator("Lecture Collaborateur", self._execute_odoo_kw, firm_object_proxy, config_cabinet.firm_odoo_db, firm_uid, firm_api_key, 'res.partner', 'read', args=[partner_ids, [self.FIELD_COLLABORATOR_CABINET]])
-                    if partner_data and partner_data[0].get(self.FIELD_COLLABORATOR_CABINET):
+                    if isinstance(partner_data, list) and len(partner_data) > 0 and partner_data[0].get(self.FIELD_COLLABORATOR_CABINET):
                         collab_info = partner_data[0][self.FIELD_COLLABORATOR_CABINET]
                         final_assigned_collab_id_str = str(collab_info[0])
                         collaborator_display_name = collab_info[1]
                         self.stdout.write(self.style.SUCCESS(f"     - Collaborateur assigné: {collaborator_display_name}"))
 
             user_info = self._fetch_indicator("Company ID", self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'res.users', 'read', args=[[uid_client]], kwargs={'fields': ['company_id']})
-            company_id = user_info[0]['company_id'][0] if user_info and user_info[0].get('company_id') else 1
+            company_id = user_info[0]['company_id'][0] if isinstance(user_info, list) and len(user_info) > 0 and user_info[0].get('company_id') else 1
 
             # --- VÉRIFICATION PRÉALABLE DES MODULES INSTALLÉS ---
             self.stdout.write("     - Vérification des modules clés installés...")
@@ -305,12 +312,20 @@ class Command(BaseCommand):
 
                 # Ajustements d'inventaire
                 pending_inventory_count = None
-                if major_version in ['17.0', '18.0']:
+                try:
+                    major_float = float(major_version) if major_version != 'default' else 0
+                except (ValueError, TypeError):
+                    major_float = 0
+                
+                if major_float >= 17.0:
                     pending_inventory_domain = [('inventory_quantity_set', '=', True), ('inventory_date', '=', False)]
                     pending_inventory_count = self._fetch_indicator(self.IND_PENDING_INVENTORY, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'stock.quant', 'search_count', args=[pending_inventory_domain])
                 else:
-                    pending_inventory_domain = [('state', 'in', ['draft', 'confirm'])]
-                    pending_inventory_count = self._fetch_indicator(self.IND_PENDING_INVENTORY, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'stock.inventory', 'search_count', args=[pending_inventory_domain])
+                    try:
+                        pending_inventory_domain = [('state', 'in', ['draft', 'confirm'])]
+                        pending_inventory_count = self._fetch_indicator(self.IND_PENDING_INVENTORY, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'stock.inventory', 'search_count', args=[pending_inventory_domain])
+                    except Exception:
+                        pending_inventory_count = 0
                 indicators_data[self.IND_PENDING_INVENTORY] = pending_inventory_count if pending_inventory_count is not None else 0
                 
                 # Stock négatif
@@ -586,7 +601,7 @@ class Command(BaseCommand):
             if is_module_installed.get('account'):
                 # date cloture annuelle
                 company_data = self._fetch_indicator(self.IND_FISCAL_CLOSING, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'res.company', 'read', args=[[company_id]], kwargs={'fields': [self.FIELD_FISCAL_YEAR_DAY, self.FIELD_FISCAL_YEAR_MONTH]})
-                if company_data and company_data[0].get(self.FIELD_FISCAL_YEAR_DAY) and company_data[0].get(self.FIELD_FISCAL_YEAR_MONTH):
+                if isinstance(company_data, list) and len(company_data) > 0 and company_data[0].get(self.FIELD_FISCAL_YEAR_DAY) and company_data[0].get(self.FIELD_FISCAL_YEAR_MONTH):
                     day, month = company_data[0][self.FIELD_FISCAL_YEAR_DAY], company_data[0][self.FIELD_FISCAL_YEAR_MONTH]
                     indicators_data[self.IND_FISCAL_CLOSING] = f"{int(day):02d}/{int(month):02d}"
 
@@ -606,15 +621,19 @@ class Command(BaseCommand):
 
                 # derniere cloture fiscale
                 lock_data = self._fetch_indicator(self.IND_LAST_FISCAL_LOCK_DATE, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'account.change.lock.date', 'search_read', args=[[]], kwargs={'fields': [self.FIELD_FISCAL_LOCK_DATE], 'limit': 1})
-                if lock_data and lock_data[0].get(self.FIELD_FISCAL_LOCK_DATE):
+                if isinstance(lock_data, list) and len(lock_data) > 0 and lock_data[0].get(self.FIELD_FISCAL_LOCK_DATE):
                     indicators_data[self.IND_LAST_FISCAL_LOCK_DATE] = lock_data[0][self.FIELD_FISCAL_LOCK_DATE]
                 
                 # resultat provisoire
                 today_obj = timezone.now().date()
                 first_day_obj = today_obj.replace(month=1, day=1)
-                income = -self.get_account_balance_sum_for_period(object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, ['7'], company_id, first_day_obj.strftime('%Y-%m-%d'), today_obj.strftime('%Y-%m-%d'))
-                expense = self.get_account_balance_sum_for_period(object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, ['6'], company_id, first_day_obj.strftime('%Y-%m-%d'), today_obj.strftime('%Y-%m-%d'))
-                indicators_data[self.IND_PROVISIONAL_RESULT] = f"{(income - expense):,.2f}"
+                try:
+                    income = -self.get_account_balance_sum_for_period(object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, ['7'], company_id, first_day_obj.strftime('%Y-%m-%d'), today_obj.strftime('%Y-%m-%d'))
+                    expense = self.get_account_balance_sum_for_period(object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, ['6'], company_id, first_day_obj.strftime('%Y-%m-%d'), today_obj.strftime('%Y-%m-%d'))
+                    indicators_data[self.IND_PROVISIONAL_RESULT] = f"{(income - expense):,.2f}"
+                except Exception as e_result:
+                    self.stderr.write(self.style.ERROR(f"     - Erreur extraction '{self.IND_PROVISIONAL_RESULT}': {e_result}"))
+                    indicators_data[self.IND_PROVISIONAL_RESULT] = "Erreur"
 
                 # Nombre de lignes d'écritures comptables année courante
                 start_of_year = today_obj.replace(month=1, day=1).strftime('%Y-%m-%d')
@@ -653,7 +672,7 @@ class Command(BaseCommand):
 
             # Indicateur: date activation base
             module_data = self._fetch_indicator(self.IND_DB_ACTIVATION_DATE, self._execute_odoo_kw, object_proxy_client, client_conf.client_odoo_db, uid_client, client_api_key, 'ir.module.module', 'search_read', args=[[]], kwargs={'fields': ['create_date'], 'limit': 1, 'order': 'create_date asc'})
-            if module_data and isinstance(module_data[0].get('create_date'), str):
+            if isinstance(module_data, list) and len(module_data) > 0 and isinstance(module_data[0].get('create_date'), str):
                 dt_object = datetime.strptime(module_data[0]['create_date'], '%Y-%m-%d %H:%M:%S')
                 indicators_data[self.IND_DB_ACTIVATION_DATE] = dt_object.strftime('%d/%m/%Y')
 
@@ -683,10 +702,32 @@ class Command(BaseCommand):
                     except Exception as e_save:
                         self.stderr.write(self.style.ERROR(f"     - Erreur sauvegarde indicateur '{name}': {e_save}"))
                         error_count += 1
-            
+
             if error_count > 0:
                 self.stderr.write(self.style.ERROR(f"{saved_count} indicateur(s) sauvegardé(s), {error_count} erreur(s) pour {client_conf.client_name}."))
             elif saved_count > 0:
                 self.stdout.write(self.style.SUCCESS(f"{saved_count} indicateur(s) sauvegardé(s) avec succès pour {client_conf.client_name}."))
 
-        self.stdout.write(self.style.SUCCESS("\n--- Fin de l'extraction des indicateurs ---"))
+            with lock:
+                results['success'] += 1
+
+        # --- Exécution parallèle ---
+        clients_list = list(clients_config)
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(process_client, client): client for client in clients_list}
+            for future in as_completed(futures):
+                client = futures[future]
+                try:
+                    future.result()
+                except Exception as e:
+                    import traceback
+                    self.stderr.write(self.style.ERROR(f"\n*** ERREUR pour {client.client_name}: {e} ***"))
+                    self.stderr.write(self.style.ERROR(traceback.format_exc()))
+                    with lock:
+                        results['error'] += 1
+
+        self.stdout.write(self.style.SUCCESS(
+            f"\n--- Fin de l'extraction des indicateurs ---"
+            f"\n    {results['success']} client(s) traité(s) avec succès, {results['error']} erreur(s)"
+        ))
+

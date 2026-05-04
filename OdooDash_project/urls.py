@@ -1,18 +1,17 @@
-# odoo_dash_project/urls.py
+# OdooDash_project/urls.py
 from django.contrib import admin
-# Assurez-vous que 'include' est bien importé
 from django.urls import path, include
-from django.views.generic import RedirectView
-from core.views import CustomLoginView
+from django.views.generic import RedirectView # <--- IMPORT AJOUTÉ
+from core.views import CustomLoginView 
 
 urlpatterns = [
-    # --- MODIFICATION ICI ---
-    # On place votre vue personnalisée AVANT les 'auth.urls' pour qu'elle prenne le dessus
+    # --- NOUVELLE LIGNE POUR LA RACINE ---
+    # Redirige automatiquement l'URL vide '' vers la page de login
+    path('', RedirectView.as_view(pattern_name='login', permanent=False)),
+
+    # Vos URLs existantes
     path('accounts/login/', CustomLoginView.as_view(), name='login'),
-    
-    # Les URLs standards (pour logout, password reset, etc.)
     path('accounts/', include('django.contrib.auth.urls')),
-    
     path('admin/', admin.site.urls),
     path('app/', include('core.urls', namespace='core')),
 ]

@@ -105,14 +105,19 @@
         
         /* --- STYLES SPÉCIFIQUES --- */
         .col-code-abonnement { min-width: 280px; white-space: nowrap; }
-        .col-nom-bdd { min-width: 250px; white-space: nowrap; }
-        .col-collaborateur { min-width: 220px; white-space: nowrap; }
-        .col-nb-utilisateurs-inactifs-14j {
-            min-width: 300px;
-            white-space: normal;
-            word-break: break-all;
-        }
+        .col-url-odoo { min-width: 400px; white-space: nowrap; }
+        .col-nom-bdd { min-width: 350px; white-space: nowrap; }
+        .col-collaborateur { min-width: 320px; white-space: nowrap; }
+        .indicator-value { white-space: nowrap; }
+        .alert-cell { background-color: #FEE2E2 !important; color: #991B1B !important; font-weight: 600; }
+
         
+        /* --- STYLES POUR LE TRI DES COLONNES --- */
+        thead th.sortable { cursor: pointer; user-select: none; transition: background-color 0.15s ease; }
+        thead th.sortable:hover { background-color: #e2e8f0; }
+        thead th .sort-indicator { display: inline-block; margin-left: 4px; color: #94a3b8; font-size: 0.65rem; vertical-align: middle; transition: color 0.15s ease; }
+        thead th.sort-asc .sort-indicator, thead th.sort-desc .sort-indicator { color: #4338ca; }
+
         /* --- STYLES POUR L'AUTOCOMPLÉTION --- */
         .autocomplete-items {
             position: absolute;
@@ -271,15 +276,15 @@
                 <table class="min-w-full bg-white">
                     <thead>
                         <tr>
-                            <th class="sticky-col text-left">Client</th>
+                            <th class="sticky-col text-left sortable">Client<span class="sort-indicator">⇅</span></th>
                             {% for indicator_name in all_indicator_names %}
-                                <th class="max-w-32 text-center">{{ indicator_name|title }}</th>
+                                <th class="max-w-32 text-center sortable">{{ indicator_name|title }}<span class="sort-indicator">⇅</span></th>
                             {% endfor %}
                             {% if show_collaborator_column %}
-                                <th class="text-center">Collaborateur Assigné</th>
+                                <th class="text-center sortable col-collaborateur">Collaborateur Assigné<span class="sort-indicator">⇅</span></th>
                             {% endif %}
                             {% if show_extraction_date_column %}
-                                <th class="max-w-32 text-center">Date Extraction</th>
+                                <th class="max-w-32 text-center sortable">Date Extraction<span class="sort-indicator">⇅</span></th>
                             {% endif %}
                         </tr>
                     </thead>
@@ -294,23 +299,25 @@
                                             </a>
                                         </td>
                                         {% for indicator_name in all_indicator_names %}
-                                            <td class="indicator-value text-center">
+                                            {% with alert_key=client|make_alert_key:indicator_name %}
+                                            <td class="indicator-value text-center {% if alert_key in alerted_cells %}alert-cell{% endif %}">
                                                 {% with indicator=indicators_dict|get_item:indicator_name %}
                                                     {{ indicator.indicator_value|default:"-" }}
                                                 {% endwith %}
                                             </td>
+                                            {% endwith %}
                                         {% endfor %}
                                         {% if indicators_for_this_client %}
                                             {% with first_indicator=indicators_for_this_client.0 %}
                                                 {% if show_collaborator_column %}
-                                                    <td class="text-center">{{ first_indicator.assigned_collaborator_name|format_collab_name|default:"N/A" }}</td>
+                                                    <td class="text-center col-collaborateur">{{ first_indicator.assigned_collaborator_name|format_collab_name|default:"N/A" }}</td>
                                                 {% endif %}
                                                 {% if show_extraction_date_column %}
                                                     <td class="whitespace-nowrap text-sm text-slate-500 text-center">{{ first_indicator.extraction_timestamp|date:"d/m/Y H:i"|default:"-" }}</td>
                                                 {% endif %}
                                             {% endwith %}
                                         {% else %}
-                                            {% if show_collaborator_column %}<td class="text-center">-</td>{% endif %}
+                                            {% if show_collaborator_column %}<td class="text-center col-collaborateur">-</td>{% endif %}
                                             {% if show_extraction_date_column %}<td class="text-center">-</td>{% endif %}
                                         {% endif %}
                                     </tr>
@@ -352,24 +359,16 @@
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // === AUTOCOMPLÉTION ===
         const searchInput = document.getElementById('search');
         const container = document.getElementById('autocomplete-container');
         let suggestionsWrapper = null;
 
         searchInput.addEventListener('input', function() {
             const term = this.value;
+            if (suggestionsWrapper) { suggestionsWrapper.remove(); suggestionsWrapper = null; }
+            if (term.length < 2) { return; }
 
-            // Supprime les anciennes suggestions
-            if (suggestionsWrapper) {
-                suggestionsWrapper.remove();
-                suggestionsWrapper = null;
-            }
-
-            if (term.length < 2) {
-                return; // On ne lance la recherche qu'à partir de 2 caractères
-            }
-
-            // Appelle notre API Django
             fetch(`{% url 'core:api-search-clients' %}?term=${encodeURIComponent(term)}`)
                 .then(response => response.json())
                 .then(data => {
@@ -377,18 +376,13 @@
                         suggestionsWrapper = document.createElement('div');
                         suggestionsWrapper.setAttribute('class', 'autocomplete-items');
                         container.appendChild(suggestionsWrapper);
-
                         data.forEach(item => {
                             const suggestionDiv = document.createElement('div');
                             suggestionDiv.innerHTML = `<strong>${item.substr(0, term.length)}</strong>${item.substr(term.length)}`;
-                            
                             suggestionDiv.addEventListener('click', function() {
-                                searchInput.value = item; // Remplit la barre de recherche
-                                if (suggestionsWrapper) {
-                                    suggestionsWrapper.remove(); // Ferme la liste
-                                    suggestionsWrapper = null;
-                                }
-                                searchInput.form.submit(); // Soumet le formulaire
+                                searchInput.value = item;
+                                if (suggestionsWrapper) { suggestionsWrapper.remove(); suggestionsWrapper = null; }
+                                searchInput.form.submit();
                             });
                             suggestionsWrapper.appendChild(suggestionDiv);
                         });
@@ -396,12 +390,72 @@
                 });
         });
 
-        // Ferme la liste de suggestions si on clique ailleurs sur la page
         document.addEventListener('click', function(e) {
-            if (e.target !== searchInput && suggestionsWrapper) {
-                suggestionsWrapper.remove();
-                suggestionsWrapper = null;
-            }
+            if (e.target !== searchInput && suggestionsWrapper) { suggestionsWrapper.remove(); suggestionsWrapper = null; }
+        });
+
+        // === TRI DES COLONNES ===
+        const table = document.querySelector('.table-container table');
+        if (!table) return;
+        const headers = table.querySelectorAll('thead th.sortable');
+        let currentSortHeader = null;
+        let currentSortDir = 'none';
+
+        function parseCellValue(text) {
+            text = text.trim();
+            if (text === '' || text === '-' || text === 'N/A') return null;
+            var dateMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+            if (dateMatch) return new Date(parseInt(dateMatch[3]), parseInt(dateMatch[2]) - 1, parseInt(dateMatch[1]), parseInt(dateMatch[4]), parseInt(dateMatch[5])).getTime();
+            var dateShort = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+            if (dateShort) return new Date(parseInt(dateShort[3]), parseInt(dateShort[2]) - 1, parseInt(dateShort[1])).getTime();
+            var cleaned = text.replace(/[^\d,.-]/g, '').replace(',', '.');
+            var num = parseFloat(cleaned);
+            if (!isNaN(num) && cleaned !== '') return num;
+            return text.toLowerCase();
+        }
+
+        function sortTable(colIndex, direction) {
+            var tbody = table.querySelector('tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort(function(rowA, rowB) {
+                var cellA = rowA.querySelectorAll('td')[colIndex];
+                var cellB = rowB.querySelectorAll('td')[colIndex];
+                if (!cellA || !cellB) return 0;
+                var valA = parseCellValue(cellA.textContent);
+                var valB = parseCellValue(cellB.textContent);
+                if (valA === null && valB === null) return 0;
+                if (valA === null) return 1;
+                if (valB === null) return -1;
+                var cmp = 0;
+                if (typeof valA === 'string' && typeof valB === 'string') { cmp = valA.localeCompare(valB, 'fr'); }
+                else if (typeof valA === 'number' && typeof valB === 'number') { cmp = valA - valB; }
+                else { cmp = String(valA).localeCompare(String(valB), 'fr'); }
+                return direction === 'asc' ? cmp : -cmp;
+            });
+            rows.forEach(function(row) { tbody.appendChild(row); });
+            rows.forEach(function(row, i) { row.style.backgroundColor = (i % 2 === 0) ? '#f8fafc' : '#ffffff'; });
+        }
+
+        headers.forEach(function(header) {
+            header.addEventListener('click', function() {
+                var colIndex = Array.from(header.parentElement.children).indexOf(header);
+                if (currentSortHeader === header) {
+                    currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+                } else {
+                    if (currentSortHeader) {
+                        currentSortHeader.classList.remove('sort-asc', 'sort-desc');
+                        var oldInd = currentSortHeader.querySelector('.sort-indicator');
+                        if (oldInd) oldInd.textContent = '\u21C5';
+                    }
+                    currentSortHeader = header;
+                    currentSortDir = 'asc';
+                }
+                header.classList.remove('sort-asc', 'sort-desc');
+                header.classList.add('sort-' + currentSortDir);
+                var indicator = header.querySelector('.sort-indicator');
+                if (indicator) indicator.textContent = currentSortDir === 'asc' ? '\u25B2' : '\u25BC';
+                sortTable(colIndex, currentSortDir);
+            });
         });
     });
     </script>

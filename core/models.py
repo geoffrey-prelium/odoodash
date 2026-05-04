@@ -179,3 +179,60 @@ class ClientPreference(models.Model):
     class Meta:
         verbose_name = "Préférence Client"
         verbose_name_plural = "Préférences Clients"
+
+
+# --- Modèle pour les alertes sur les indicateurs ---
+class AlerteIndicateur(models.Model):
+    COMPARATOR_CHOICES = [
+        ('lt', '<'),
+        ('lte', '<='),
+        ('gt', '>'),
+        ('gte', '>='),
+    ]
+
+    client = models.ForeignKey(
+        ClientsOdoo,
+        on_delete=models.CASCADE,
+        verbose_name="Dossier"
+    )
+    indicator_name = models.CharField(
+        max_length=255,
+        verbose_name="Indicateur"
+    )
+    comparator = models.CharField(
+        max_length=3,
+        choices=COMPARATOR_CHOICES,
+        verbose_name="Comparatif"
+    )
+    threshold = models.FloatField(verbose_name="Seuil")
+    collaborator_email = models.EmailField(verbose_name="Email Collaborateur Prelium")
+    is_active = models.BooleanField(default=True, verbose_name="Active")
+    last_alert_sent = models.DateTimeField(
+        null=True, blank=True,
+        verbose_name="Dernier mail envoyé"
+    )
+
+    def check_threshold(self, value):
+        """Vérifie si la valeur dépasse le seuil selon le comparateur."""
+        try:
+            numeric_value = float(str(value).replace(',', '.').replace(' ', '').replace('€', '').strip())
+        except (ValueError, TypeError):
+            return False
+
+        if self.comparator == 'lt':
+            return numeric_value < self.threshold
+        elif self.comparator == 'lte':
+            return numeric_value <= self.threshold
+        elif self.comparator == 'gt':
+            return numeric_value > self.threshold
+        elif self.comparator == 'gte':
+            return numeric_value >= self.threshold
+        return False
+
+    def __str__(self):
+        return f"Alerte: {self.client.client_name} - {self.indicator_name} {self.get_comparator_display()} {self.threshold}"
+
+    class Meta:
+        verbose_name = "Alerte Indicateur"
+        verbose_name_plural = "Alertes Indicateurs"
+        ordering = ['client__client_name', 'indicator_name']

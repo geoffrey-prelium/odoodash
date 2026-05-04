@@ -2,7 +2,7 @@
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.db.models import Max, Q
-from .models import IndicateursHistoriques, UserProfile, ClientsOdoo
+from .models import IndicateursHistoriques, UserProfile, ClientsOdoo, AlerteIndicateur
 from collections import defaultdict
 import logging
 import json  # <--- AJOUTÉ : Nécessaire pour client_portal_view
@@ -24,6 +24,7 @@ from .models import IndicateursHistoriques, UserProfile
 from .models import ClientPreference
 from datetime import timedelta
 from django.views.decorators.http import require_POST
+from django.utils import timezone
 
 # from .views import INDICATOR_CATEGORIES
 
@@ -36,7 +37,7 @@ INDICATOR_CATEGORIES = {
         'url odoo', 'nom bdd', 'date expiration base', 'nb societes'
     ],
     'Utilisateurs': [
-        'nb utilisateurs actifs', 'nb utilisateurs inactifs > 14j', 'nb utilisateurs lpde'
+        'nb utilisateurs actifs', 'nb utilisateurs lpde'
     ],
     'Technique': [
         'nb modules actifs', 'date activation base',
@@ -160,9 +161,19 @@ def dashboard_view(request):
         latest_run_agg = current_data_qs.aggregate(latest_run=Max('extraction_timestamp'))
         latest_run_timestamp = latest_run_agg.get('latest_run')
 
-    if latest_run_timestamp:
+    # MODIFICATION : On affiche des données si on en a, peu importe si elles datent un peu pour certains clients
+    if current_data_qs.exists():
+        # Au lieu de : latest_indicators_qs = current_data_qs.filter(extraction_timestamp=latest_run_timestamp)
+        # On utilise une sous-requête pour prendre la dernière date DISPONIBLE pour CHAQUE client.
+        
+        from django.db.models import OuterRef, Subquery
+        
+        latest_date_subquery = IndicateursHistoriques.objects.filter(
+            client=OuterRef('client')
+        ).order_by('-extraction_timestamp').values('extraction_timestamp')[:1]
+
         latest_indicators_qs = current_data_qs.filter(
-            extraction_timestamp=latest_run_timestamp
+            extraction_timestamp=Subquery(latest_date_subquery)
         )
 
         # Application des filtres
@@ -228,6 +239,21 @@ def dashboard_view(request):
             clients_list = []
             client_indicators_dict = {}
 
+    # --- DÉTECTION DES ALERTES ---
+    alerted_cells = set()  # Contiendra des clés "client_pk|indicator_name"
+    try:
+        active_alerts = AlerteIndicateur.objects.filter(is_active=True).select_related('client')
+        for alert in active_alerts:
+            # Chercher la valeur actuelle de cet indicateur pour ce client
+            client_indicators = client_indicators_dict.get(alert.client, [])
+            for indicator in client_indicators:
+                if indicator.indicator_name.strip().lower() == alert.indicator_name.strip().lower():
+                    if alert.check_threshold(indicator.indicator_value):
+                        alerted_cells.add(f"{alert.client.pk}|{alert.indicator_name}")
+                    break
+    except Exception as e:
+        logger.error(f"Erreur lors de la vérification des alertes: {e}")
+
     context = {
         'user_profile': profile,
         'user_role': user_role,
@@ -247,6 +273,7 @@ def dashboard_view(request):
         'show_prelium_filter': user_role == 'super_admin',
         'prelium_filter_active': prelium_filter == 'on',
         'search_query': search_query,
+        'alerted_cells': alerted_cells,
     }
     return render(request, 'core/dashboard.html', context)
 
@@ -254,15 +281,23 @@ def dashboard_view(request):
 @user_passes_test(lambda u: u.is_staff)
 def trigger_fetch_indicators_view(request):
     if request.method == 'POST':
-        try:
-            logger.info(f"Lancement de fetch_indicators par l'utilisateur: {request.user.username}")
-            call_command('fetch_indicators')
-            messages.success(request,
-                             "L'extraction des indicateurs a été lancée avec succès. Les données seront mises à jour sous peu.")
-        except Exception as e:
-            logger.error(f"Erreur lors du lancement de fetch_indicators via l'admin par {request.user.username}: {e}",
-                         exc_info=True)
-            messages.error(request, f"Une erreur est survenue lors du lancement de l'extraction : {e}")
+        import threading
+
+        def run_extraction_and_alerts():
+            try:
+                call_command('fetch_indicators')
+            except Exception as e:
+                logger.error(f"Erreur fetch_indicators (background): {e}", exc_info=True)
+            try:
+                call_command('check_alerts')
+            except Exception as e:
+                logger.error(f"Erreur check_alerts (background): {e}", exc_info=True)
+
+        logger.info(f"Lancement de fetch_indicators + check_alerts en arrière-plan par: {request.user.username}")
+        thread = threading.Thread(target=run_extraction_and_alerts, daemon=False)
+        thread.start()
+        messages.success(request,
+                         "L'extraction des indicateurs a été lancée en arrière-plan. Les données et alertes seront traitées sous peu.")
     return redirect(reverse('admin:index'))
 
 
@@ -279,12 +314,34 @@ def scheduler_fetch_indicators_view(request):
         try:
             logger.info("Lancement de fetch_indicators par le scheduler Cloud.")
             call_command('fetch_indicators')
-            return HttpResponse("Extraction des indicateurs lancée avec succès par le scheduler.", status=200)
+            return HttpResponse("Extraction des indicateurs terminée.", status=200)
         except Exception as e:
-            logger.error(f"Erreur lors du lancement de fetch_indicators via le scheduler: {e}", exc_info=True)
-            return HttpResponse(f"Erreur lors du lancement de l'extraction : {e}", status=500)
+            logger.error(f"Erreur fetch_indicators via scheduler: {e}", exc_info=True)
+            return HttpResponse(f"Erreur extraction: {e}", status=500)
     
-    return HttpResponse("Cette URL ne peut être appelée qu'avec la méthode POST.", status=405)
+    return HttpResponse("Méthode POST requise.", status=405)
+
+
+@csrf_exempt
+def scheduler_check_alerts_view(request):
+    """
+    Vue sécurisée pour vérifier les alertes. Appelée par un Cloud Scheduler séparé,
+    après l'extraction des indicateurs.
+    """
+    if request.headers.get("X-CloudScheduler") != "true":
+        logger.warning("Tentative d'accès non autorisée au check_alerts scheduler.")
+        return HttpResponseForbidden("Accès non autorisé.")
+
+    if request.method == 'POST':
+        try:
+            logger.info("Lancement de check_alerts par le scheduler Cloud.")
+            call_command('check_alerts')
+            return HttpResponse("Vérification des alertes terminée.", status=200)
+        except Exception as e:
+            logger.error(f"Erreur check_alerts via scheduler: {e}", exc_info=True)
+            return HttpResponse(f"Erreur check_alerts: {e}", status=500)
+    
+    return HttpResponse("Méthode POST requise.", status=405)
 
 # Fonction utilitaire pour nettoyer les valeurs numériques (ex: "1 200,50 €" -> 1200.50)
 def clean_numeric_value(value):
@@ -440,3 +497,110 @@ def save_client_preferences(request):
         return JsonResponse({'status': 'ok'})
     except Exception as e:
         return JsonResponse({'status': 'error', 'message': str(e)}, status=400)
+
+
+# --- VUE DE TEST EMAIL (TEMPORAIRE) ---
+@user_passes_test(lambda u: u.is_staff)
+def test_email_view(request):
+    from django.core.mail import send_mail
+    from django.conf import settings as s
+    try:
+        send_mail(
+            '[OdooDash] Test Email',
+            'Ceci est un email de test depuis OdooDash.',
+            s.DEFAULT_FROM_EMAIL,
+            [s.EMAIL_HOST_USER],
+            fail_silently=False,
+        )
+        return HttpResponse(
+            f"Email envoyé avec succès !<br>"
+            f"HOST: {s.EMAIL_HOST}<br>"
+            f"PORT: {s.EMAIL_PORT}<br>"
+            f"USER: {s.EMAIL_HOST_USER}<br>"
+            f"FROM: {s.DEFAULT_FROM_EMAIL}<br>"
+            f"PASSWORD: {'***' + s.EMAIL_HOST_PASSWORD[-4:] if s.EMAIL_HOST_PASSWORD else 'VIDE'}"
+        )
+    except Exception as e:
+        return HttpResponse(
+            f"ERREUR: {e}<br><br>"
+            f"HOST: {s.EMAIL_HOST}<br>"
+            f"PORT: {s.EMAIL_PORT}<br>"
+            f"USER: {s.EMAIL_HOST_USER}<br>"
+            f"FROM: {s.DEFAULT_FROM_EMAIL}<br>"
+            f"PASSWORD: {'***' + s.EMAIL_HOST_PASSWORD[-4:] if s.EMAIL_HOST_PASSWORD else 'VIDE'}",
+            status=500
+        )
+
+
+# --- VUE DE TEST ALERTES (TEMPORAIRE) ---
+@user_passes_test(lambda u: u.is_staff)
+def test_alerts_view(request):
+    from django.utils import timezone
+    from datetime import timedelta
+    from django.core.mail import send_mail
+    from django.conf import settings as s
+    from .models import AlerteIndicateur, IndicateursHistoriques
+
+    output = ["<h2>Test des Alertes Indicateurs</h2>"]
+    output.append(f"<p>SMTP: {s.EMAIL_HOST}:{s.EMAIL_PORT} | USER: {s.EMAIL_HOST_USER} | FROM: {s.DEFAULT_FROM_EMAIL}</p>")
+    output.append("<hr>")
+
+    try:
+        active_alerts = AlerteIndicateur.objects.filter(is_active=True).select_related('client')
+        output.append(f"<p><b>Alertes actives: {active_alerts.count()}</b></p>")
+
+        for alert in active_alerts:
+            output.append(f"<h3>Alerte: {alert.client.client_name} | {alert.indicator_name} {alert.get_comparator_display()} {alert.threshold}</h3>")
+            output.append(f"<p>Email: {alert.collaborator_email} | last_alert_sent: {alert.last_alert_sent}</p>")
+
+            latest_indicator = IndicateursHistoriques.objects.filter(
+                client=alert.client,
+                indicator_name__iexact=alert.indicator_name
+            ).order_by('-extraction_timestamp').first()
+
+            if not latest_indicator:
+                output.append("<p style='color:orange'>Aucun indicateur trouvé en BDD pour ce nom.</p>")
+                # Chercher des noms approchants
+                similar = IndicateursHistoriques.objects.filter(
+                    client=alert.client,
+                    indicator_name__icontains=alert.indicator_name.split()[0]
+                ).values_list('indicator_name', flat=True).distinct()[:10]
+                output.append(f"<p>Noms approchants: {list(similar)}</p>")
+                continue
+
+            output.append(f"<p>Valeur en BDD: '{latest_indicator.indicator_value}' (extraction: {latest_indicator.extraction_timestamp})</p>")
+
+            threshold_breached = alert.check_threshold(latest_indicator.indicator_value)
+            output.append(f"<p>Seuil franchi: <b style='color:{'red' if threshold_breached else 'green'}'>{threshold_breached}</b></p>")
+
+            if threshold_breached:
+                should_send = False
+                if alert.last_alert_sent is None:
+                    should_send = True
+                    output.append("<p>last_alert_sent est None → devrait envoyer</p>")
+                else:
+                    time_since = timezone.now() - alert.last_alert_sent
+                    should_send = time_since > timedelta(hours=48)
+                    output.append(f"<p>Temps depuis dernier mail: {time_since} → {'envoyer' if should_send else 'ignoré (< 48h)'}</p>")
+
+                if should_send and request.GET.get('send') == '1':
+                    try:
+                        send_mail(
+                            f'[OdooDash] Alerte TEST: {alert.indicator_name} pour {alert.client.client_name}',
+                            f'Valeur: {latest_indicator.indicator_value}\nSeuil: {alert.get_comparator_display()} {alert.threshold}',
+                            s.DEFAULT_FROM_EMAIL,
+                            [alert.collaborator_email],
+                            fail_silently=False,
+                        )
+                        output.append("<p style='color:green'><b>EMAIL ENVOYÉ AVEC SUCCÈS !</b></p>")
+                    except Exception as e_mail:
+                        output.append(f"<p style='color:red'><b>ERREUR ENVOI: {e_mail}</b></p>")
+                elif should_send:
+                    output.append("<p>Ajoutez <b>?send=1</b> à l'URL pour envoyer le mail de test.</p>")
+
+    except Exception as e:
+        output.append(f"<p style='color:red'>ERREUR: {e}</p>")
+        import traceback
+        output.append(f"<pre>{traceback.format_exc()}</pre>")
+
+    return HttpResponse("\n".join(output))
